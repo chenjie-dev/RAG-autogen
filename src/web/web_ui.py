@@ -195,6 +195,7 @@ def ask_question_stream():
                 think_content = ""
                 answer_content = ""
                 think_complete = False
+                buffer = ""  # 用于累积字符
                 
                 for chunk in stream:
                     if 'message' in chunk and 'content' in chunk['message']:
@@ -219,19 +220,47 @@ def ask_question_stream():
                             # 移除</think>标签
                             content = content.replace('</think>', '')
                         
-                        # 如果在思考块内，发送思考内容
-                        if in_think_block:
-                            think_content += content
-                            if content.strip():  # 只发送非空内容
-                                yield f"data: [THINK] {content}\n\n"
-                            continue
+                        # 处理缓冲区
+                        buffer += content
                         
-                        # 如果不在思考块内，这是正式回答内容
-                        if content.strip():  # 只发送非空内容
-                            answer_content += content
-                            full_answer += content
-                            # 发送正式回答内容
-                            yield f"data: [ANSWER] {content}\n\n"
+                        # 如果缓冲区中有完整的词或标点，就发送出去
+                        while True:
+                            # 查找下一个分割点
+                            next_split = -1
+                            for char in '，。！？、；：""''（）《》【】\n':
+                                pos = buffer.find(char)
+                                if pos != -1 and (next_split == -1 or pos < next_split):
+                                    next_split = pos + 1
+                            
+                            # 如果没有找到分割点，并且缓冲区不够长，就继续等待
+                            if next_split == -1 and len(buffer) < 5:
+                                break
+                            
+                            # 如果没有找到分割点，但缓冲区足够长，就取前面的部分
+                            if next_split == -1:
+                                next_split = 5
+                            
+                            # 提取要发送的内容
+                            to_send = buffer[:next_split].strip()
+                            buffer = buffer[next_split:]
+                            
+                            # 如果有内容要发送
+                            if to_send:
+                                if in_think_block:
+                                    think_content += to_send
+                                    yield f"data: [THINK] {to_send}\n\n"
+                                else:
+                                    answer_content += to_send
+                                    yield f"data: [ANSWER] {to_send}\n\n"
+                        
+                # 处理剩余的缓冲区内容
+                if buffer.strip():
+                    if in_think_block:
+                        think_content += buffer
+                        yield f"data: [THINK] {buffer.strip()}\n\n"
+                    else:
+                        answer_content += buffer
+                        yield f"data: [ANSWER] {buffer.strip()}\n\n"
                 
                 # 如果没有检测到思考块，但已经开始回答，发送回答开始标记
                 if not think_complete and answer_content.strip():

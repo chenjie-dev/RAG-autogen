@@ -48,10 +48,11 @@
         .upload-area {
             border: 2px dashed #667eea;
             border-radius: 15px;
-            padding: 40px;
+            padding: 20px;
             text-align: center;
             background: #f8f9fa;
             transition: all 0.3s ease;
+            margin-bottom: 15px;
         }
         .upload-area:hover {
             border-color: #764ba2;
@@ -67,12 +68,13 @@
             border-radius: 5px;
         }
         .chat-container {
-            height: 400px;
+            height: 600px;
             overflow-y: auto;
             border: 1px solid #dee2e6;
             border-radius: 10px;
             padding: 15px;
             background: #f8f9fa;
+            margin-bottom: 15px;
         }
         .message {
             margin-bottom: 15px;
@@ -205,6 +207,99 @@
         .markdown-content em {
             font-style: italic;
         }
+
+        .side-panel {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .question-input-container {
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            padding: 15px;
+            border-top: 1px solid #dee2e6;
+            margin-top: auto;
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            padding: 20px;
+            height: calc(100vh - 100px);
+        }
+
+        .left-sidebar {
+            flex: 0 0 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card {
+            margin-bottom: 15px;
+        }
+
+        .card-header {
+            padding: 10px 15px;
+        }
+
+        .card-body {
+            padding: 15px;
+        }
+
+        .input-group {
+            margin-bottom: 0;
+        }
+
+        #question-input {
+            height: 45px;
+        }
+
+        #ask-btn {
+            min-width: 80px;
+        }
+
+        .card-body.py-2 {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+        }
+
+        #upload-status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
+
+        #upload-status:empty {
+            display: none;
+        }
+
+        #upload-status.processing {
+            background-color: #fff3cd;
+            border-color: #ffeeba;
+            color: #856404;
+        }
+
+        #upload-status.success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+
+        #upload-status.error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
@@ -264,66 +359,52 @@
                 </div>
             </div>
 
-            <div class="row">
-                <!-- 文件上传区域 -->
-                <div class="col-md-6">
-                    <div class="card">
-                        <div class="card-header">
-                            <i class="fas fa-upload"></i> 文档上传
-                        </div>
-                        <div class="card-body">
-                            <div class="upload-area" id="upload-area">
-                                <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
-                                <h5>拖拽文件到此处或点击选择</h5>
-                                <p class="text-muted">支持 PDF, DOCX, MD, PPTX, TXT 格式</p>
-                                <input type="file" id="file-input" class="d-none" accept=".pdf,.docx,.md,.pptx,.txt">
-                                <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
-                                    <i class="fas fa-folder-open"></i> 选择文件
-                                </button>
-                            </div>
-                            <div id="upload-status" class="mt-3"></div>
+            <div class="main-content">
+                <!-- 左侧边栏 -->
+                <div class="left-sidebar">
+                    <!-- 文件处理状态 -->
+                    <div id="upload-status" class="mb-2"></div>
+
+                    <!-- 文件上传区域 -->
+                    <div class="upload-area" id="upload-area">
+                        <i class="fas fa-cloud-upload-alt fa-2x mb-2"></i>
+                        <h6>拖拽文件到此处或点击上传</h6>
+                        <small class="text-muted d-block">支持 PDF, DOCX, MD, PPTX, TXT 格式</small>
+                        <input type="file" id="file-input" class="d-none" multiple>
+                        <div id="upload-progress" class="progress mt-2 d-none">
+                            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                         </div>
                     </div>
 
-                    <!-- 知识管理 -->
+                    <!-- 手动添加知识区域 -->
                     <div class="card">
-                        <div class="card-header">
-                            <i class="fas fa-plus-circle"></i> 添加知识
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">添加知识</h5>
+                            <button id="clear-kb-btn" class="btn btn-danger btn-sm">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
                         </div>
                         <div class="card-body">
-                            <div class="mb-3">
-                                <label for="knowledge-text" class="form-label">知识内容</label>
-                                <textarea class="form-control" id="knowledge-text" rows="3" placeholder="输入要添加的知识内容..."></textarea>
+                            <div class="form-group">
+                                <textarea class="form-control mb-2" id="knowledge-input" rows="3" placeholder="输入知识内容..."></textarea>
+                                <input type="text" class="form-control mb-2" id="source-input" placeholder="来源（可选）">
+                                <button class="btn btn-primary w-100" id="add-knowledge-btn">
+                                    <i class="fas fa-plus"></i> 添加知识
+                                </button>
                             </div>
-                            <div class="mb-3">
-                                <label for="knowledge-source" class="form-label">来源</label>
-                                <input type="text" class="form-control" id="knowledge-source" placeholder="知识来源（可选）">
-                            </div>
-                            <button class="btn btn-primary" onclick="addKnowledge()">
-                                <i class="fas fa-plus"></i> 添加知识
-                            </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- 问答区域 -->
-                <div class="col-md-6">
-                    <div class="card">
-                        <div class="card-header">
-                            <i class="fas fa-comments"></i> 智能问答
-                        </div>
-                        <div class="card-body">
-                            <div class="chat-container" id="chat-container">
-                                <div class="message bot-message">
-                                    <i class="fas fa-robot"></i> 您好！我是您的AI助手，请问有什么可以帮助您的吗？
-                                </div>
-                            </div>
-                            <div class="input-group mt-3">
-                                <input type="text" class="form-control" id="question-input" placeholder="请输入您的问题...">
-                                <button class="btn btn-primary" onclick="askQuestion()" id="ask-btn">
-                                    <i class="fas fa-paper-plane"></i> 发送
-                                </button>
-                            </div>
+                <!-- 主要聊天区域 -->
+                <div class="chat-section">
+                    <div id="chat-container" class="chat-container"></div>
+                    <div class="question-input-container">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="question-input" placeholder="输入您的问题...">
+                            <button class="btn btn-primary" type="button" id="ask-btn">
+                                <i class="fas fa-paper-plane"></i> 发送
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -382,72 +463,155 @@
             loadStats();
             setupFileUpload();
             setupStatusPolling();
+            setupMessageHandling();
         });
+
+        // 设置消息处理
+        function setupMessageHandling() {
+            const askBtn = document.getElementById('ask-btn');
+            const questionInput = document.getElementById('question-input');
+            const addKnowledgeBtn = document.getElementById('add-knowledge-btn');
+            const clearKbBtn = document.getElementById('clear-kb-btn');
+            const confirmClearKbBtn = document.getElementById('confirm-clear-kb');
+            const clearKbModal = new bootstrap.Modal(document.getElementById('clearKbModal'));
+
+            // 发送按钮点击事件
+            askBtn.addEventListener('click', () => {
+                askQuestion();
+            });
+
+            // 输入框回车事件
+            questionInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    askQuestion();
+                }
+            });
+
+            // 添加知识按钮点击事件
+            if (addKnowledgeBtn) {
+                addKnowledgeBtn.addEventListener('click', () => {
+                    addKnowledge();
+                });
+            }
+
+            // 清空知识库按钮点击事件
+            if (clearKbBtn) {
+                clearKbBtn.addEventListener('click', () => {
+                    clearKbModal.show();
+                });
+            }
+
+            // 确认清空知识库按钮点击事件
+            if (confirmClearKbBtn) {
+                confirmClearKbBtn.addEventListener('click', () => {
+                    clearKnowledgeBase();
+                    clearKbModal.hide();
+                });
+            }
+        }
 
         // 设置文件上传
         function setupFileUpload() {
             const uploadArea = document.getElementById('upload-area');
             const fileInput = document.getElementById('file-input');
+            const uploadStatus = document.getElementById('upload-status');
+            const uploadProgress = document.getElementById('upload-progress');
+            const progressBar = uploadProgress.querySelector('.progress-bar');
 
-            // 拖拽上传
-            uploadArea.addEventListener('dragover', function(e) {
+            console.log('File upload script initialized'); // 调试日志
+
+            // 点击上传区域触发文件选择
+            uploadArea.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fileInput.click();
+                console.log('Upload area clicked'); // 调试日志
+            });
+
+            // 拖拽相关事件
+            uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 uploadArea.classList.add('dragover');
             });
 
-            uploadArea.addEventListener('dragleave', function(e) {
-                e.preventDefault();
+            uploadArea.addEventListener('dragleave', () => {
                 uploadArea.classList.remove('dragover');
             });
 
-            uploadArea.addEventListener('drop', function(e) {
+            uploadArea.addEventListener('drop', (e) => {
                 e.preventDefault();
                 uploadArea.classList.remove('dragover');
                 const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    uploadFile(files[0]);
-                }
+                handleFiles(files);
             });
 
-            // 点击上传
-            fileInput.addEventListener('change', function(e) {
-                if (e.target.files.length > 0) {
-                    uploadFile(e.target.files[0]);
-                }
+            // 文件选择处理
+            fileInput.addEventListener('change', (e) => {
+                console.log('File selected:', e.target.files); // 调试日志
+                const files = e.target.files;
+                handleFiles(files);
             });
         }
 
-        // 上传文件
-        function uploadFile(file) {
+        // 处理文件上传
+        function handleFiles(files) {
+            if (files.length === 0) return;
+
+            const uploadStatus = document.getElementById('upload-status');
+            const uploadProgress = document.getElementById('upload-progress');
+            const progressBar = uploadProgress.querySelector('.progress-bar');
+
+            console.log('Processing files:', files); // 调试日志
+
+            // 显示上传状态
+            uploadStatus.textContent = '准备上传文件...';
+            uploadStatus.className = 'processing';
+            uploadProgress.classList.remove('d-none');
+            progressBar.style.width = '0%';
+
+            // 创建FormData对象
             const formData = new FormData();
-            formData.append('file', file);
+            for (let file of files) {
+                formData.append('file', file);
+            }
 
-            showUploadStatus('正在上传文件...', 'info');
-
+            // 发送上传请求
             fetch('/upload', {
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    showUploadStatus(data.error, 'error');
-                } else {
-                    showUploadStatus(data.message, 'success');
-                    startStatusPolling();
+            .then(response => {
+                console.log('Upload response:', response); // 调试日志
+                if (!response.ok) {
+                    throw new Error('上传失败');
                 }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Upload success:', data); // 调试日志
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                uploadStatus.textContent = '文件上传成功！';
+                uploadStatus.className = 'success';
+                progressBar.style.width = '100%';
+                // 更新统计信息
+                loadStats();
             })
             .catch(error => {
-                showUploadStatus('上传失败: ' + error.message, 'error');
+                console.error('Upload error:', error); // 调试日志
+                uploadStatus.textContent = '上传失败: ' + error.message;
+                uploadStatus.className = 'error';
+            })
+            .finally(() => {
+                // 清空文件输入框，允许重复上传相同文件
+                document.getElementById('file-input').value = '';
+                // 3秒后隐藏进度条
+                setTimeout(() => {
+                    uploadProgress.classList.add('d-none');
+                }, 3000);
             });
-        }
-
-        // 显示上传状态
-        function showUploadStatus(message, type) {
-            const statusDiv = document.getElementById('upload-status');
-            const className = type === 'error' ? 'alert alert-danger' : 
-                            type === 'success' ? 'alert alert-success' : 'alert alert-info';
-            statusDiv.innerHTML = `<div class="${className}">${message}</div>`;
         }
 
         // 设置状态轮询
@@ -507,8 +671,10 @@
 
         // 添加知识
         function addKnowledge() {
-            const text = document.getElementById('knowledge-text').value.trim();
-            const source = document.getElementById('knowledge-source').value.trim() || 'manual_input';
+            const knowledgeInput = document.getElementById('knowledge-input');
+            const sourceInput = document.getElementById('source-input');
+            const text = knowledgeInput.value.trim();
+            const source = sourceInput.value.trim() || 'manual_input';
 
             if (!text) {
                 alert('请输入知识内容');
@@ -531,8 +697,8 @@
                     alert('添加知识失败: ' + data.error);
                 } else {
                     alert('知识添加成功');
-                    document.getElementById('knowledge-text').value = '';
-                    document.getElementById('knowledge-source').value = '';
+                    knowledgeInput.value = '';
+                    sourceInput.value = '';
                     loadStats();
                 }
             })
@@ -571,16 +737,17 @@
             const chatContainer = document.getElementById('chat-container');
             const askBtn = document.getElementById('ask-btn');
             
-            // 创建思考内容容器和回答容器的变量
+            // 创建消息容器
+            let messageContainer = document.createElement('div');
+            messageContainer.className = 'message bot-message';
+            chatContainer.appendChild(messageContainer);
+            
+            // 创建思考内容和回答内容的容器
             let thinkDiv = null;
             let answerDiv = null;
-            let thinkBuffer = '';
-            let answerBuffer = '';
-            let thinkRenderTimer = null;
-            let answerRenderTimer = null;
-            let lastThinkLength = 0;
-            let lastAnswerLength = 0;
-
+            let thinkContent = '';
+            let answerContent = '';
+            
             // 发送流式请求
             fetch('/ask_stream', {
                 method: 'POST',
@@ -603,68 +770,81 @@
                 function readStream() {
                     return reader.read().then(({ done, value }) => {
                         if (done) {
-                            // 流结束，渲染最后的缓冲区内容
-                            if (thinkBuffer.trim()) {
-                                renderThinkContent(thinkBuffer, true);
-                            }
-                            if (answerBuffer.trim()) {
-                                renderAnswerContent(answerBuffer, true);
-                            }
-                            
-                            // 恢复按钮状态
+                            // 流结束，恢复按钮状态
                             isProcessing = false;
                             askBtn.disabled = false;
                             askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
                             document.getElementById('question-input').value = '';
+                            
+                            // 滚动到底部
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
                             return;
                         }
                         
+                        // 解码新的数据块
                         buffer += decoder.decode(value, { stream: true });
+                        
+                        // 处理完整的数据行
                         const lines = buffer.split('\n');
                         buffer = lines.pop(); // 保留不完整的行
                         
                         for (const line of lines) {
                             if (line.startsWith('data: ')) {
                                 const data = line.slice(6);
+                                
+                                // 处理特殊标记
                                 if (data === '[DONE]') {
                                     // 流结束
-                                    isProcessing = false;
-                                    askBtn.disabled = false;
-                                    askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
-                                    document.getElementById('question-input').value = '';
-                                    return;
+                                    continue;
                                 } else if (data.startsWith('[ERROR]')) {
-                                    // 错误处理
-                                    showToast('error', data.slice(8));
-                                    isProcessing = false;
-                                    askBtn.disabled = false;
-                                    askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
-                                    return;
+                                    // 显示错误消息
+                                    const errorMessage = data.slice(7);
+                                    messageContainer.innerHTML = `<div class="error-message">错误: ${errorMessage}</div>`;
                                 } else if (data === '[THINK_START]') {
-                                    // 开始思考内容
+                                    // 创建思考内容容器
                                     thinkDiv = document.createElement('div');
-                                    thinkDiv.className = 'message think-message';
-                                    thinkDiv.innerHTML = '<div class="think-header"><i class="fas fa-brain"></i> 思考过程</div><div class="think-content"></div>';
-                                    chatContainer.appendChild(thinkDiv);
-                                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                                    thinkDiv.className = 'think-message';
+                                    thinkDiv.innerHTML = '<div class="think-header">思考过程：</div><div class="think-content"></div>';
+                                    messageContainer.appendChild(thinkDiv);
+                                } else if (data === '[THINK_END]') {
+                                    // 思考结束
+                                    if (thinkDiv) {
+                                        thinkDiv.style.marginBottom = '10px';
+                                    }
                                 } else if (data === '[ANSWER_START]') {
-                                    // 开始正式回答
+                                    // 创建回答内容容器
                                     answerDiv = document.createElement('div');
-                                    answerDiv.className = 'message answer-message';
-                                    answerDiv.innerHTML = '<div class="answer-header"><i class="fas fa-comment"></i> 正式回答</div><div class="answer-content markdown-content"></div>';
-                                    chatContainer.appendChild(answerDiv);
-                                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                                } else if (data.startsWith('[THINK] ')) {
-                                    // 思考内容
-                                    const thinkContent = data.slice(8);
-                                    thinkBuffer += thinkContent;
-                                    renderThinkContent(thinkBuffer, false);
-                                } else if (data.startsWith('[ANSWER] ')) {
-                                    // 正式回答内容
-                                    const answerContent = data.slice(9);
-                                    answerBuffer += answerContent;
-                                    renderAnswerContent(answerBuffer, false);
+                                    answerDiv.className = 'answer-message';
+                                    answerDiv.innerHTML = '<div class="answer-header">回答：</div><div class="answer-content markdown-content"></div>';
+                                    messageContainer.appendChild(answerDiv);
+                                } else if (data.startsWith('[THINK]')) {
+                                    // 添加思考内容
+                                    if (thinkDiv) {
+                                        const newContent = data.slice(7);
+                                        // 移除多余的空格
+                                        const cleanContent = newContent.replace(/\s+/g, ' ').trim();
+                                        if (cleanContent) {
+                                            thinkContent += cleanContent;
+                                            const thinkContentDiv = thinkDiv.querySelector('.think-content');
+                                            thinkContentDiv.innerHTML = renderMarkdown(thinkContent);
+                                        }
+                                    }
+                                } else if (data.startsWith('[ANSWER]')) {
+                                    // 添加回答内容
+                                    if (answerDiv) {
+                                        const newContent = data.slice(8);
+                                        // 移除多余的空格
+                                        const cleanContent = newContent.replace(/\s+/g, ' ').trim();
+                                        if (cleanContent) {
+                                            answerContent += cleanContent;
+                                            const answerContentDiv = answerDiv.querySelector('.answer-content');
+                                            answerContentDiv.innerHTML = renderMarkdown(answerContent);
+                                        }
+                                    }
                                 }
+                                
+                                // 滚动到底部
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
                             }
                         }
                         
@@ -676,142 +856,66 @@
                 return readStream();
             })
             .catch(error => {
-                showToast('error', '网络连接出现问题: ' + error.message);
+                console.error('Stream error:', error);
+                messageContainer.innerHTML = `<div class="error-message">错误: ${error.message}</div>`;
                 isProcessing = false;
                 askBtn.disabled = false;
                 askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
             });
+        }
 
-            // 渲染思考内容（保持打字机效果）
-            function renderThinkContent(content, isFinal) {
-                if (thinkRenderTimer) {
-                    clearTimeout(thinkRenderTimer);
-                }
-                
-                thinkRenderTimer = setTimeout(() => {
-                    if (thinkDiv) {
-                        const thinkContentDiv = thinkDiv.querySelector('.think-content');
-                        if (thinkContentDiv) {
-                            // 思考内容保持纯文本，逐字符显示
-                            thinkContentDiv.textContent = content;
-                            chatContainer.scrollTop = chatContainer.scrollHeight;
-                        }
-                    }
-                }, isFinal ? 0 : 50); // 思考内容快速显示
+        // 打字机效果函数
+        function typewriterEffect(element, text) {
+            const words = text.split(' ');
+            let currentText = element.innerHTML || '';
+            
+            // 如果当前内容为空，确保它是一个空字符串
+            if (!currentText || currentText === 'undefined') {
+                currentText = '';
             }
-
-            // 渲染回答内容（Markdown + 打字机效果）
-            function renderAnswerContent(content, isFinal) {
-                if (answerRenderTimer) {
-                    clearTimeout(answerRenderTimer);
-                }
-                
-                answerRenderTimer = setTimeout(() => {
-                    if (answerDiv) {
-                        const answerContentDiv = answerDiv.querySelector('.answer-content');
-                        if (answerContentDiv) {
-                            if (isFinal) {
-                                // 最终渲染，完整Markdown
-                                answerContentDiv.innerHTML = renderMarkdown(content);
-                            } else {
-                                // 流式渲染，使用简化的打字机效果
-                                // 先渲染完整内容
-                                const fullHtml = renderMarkdown(content);
-                                
-                                // 创建一个临时容器
-                                const tempDiv = document.createElement('div');
-                                tempDiv.innerHTML = fullHtml;
-                                
-                                // 获取纯文本长度
-                                const fullText = tempDiv.textContent || tempDiv.innerText || '';
-                                
-                                // 计算显示长度
-                                const displayLength = Math.min(fullText.length, lastAnswerLength + 3);
-                                
-                                // 简单方法：直接截取文本并重新渲染
-                                const partialText = fullText.substring(0, displayLength);
-                                
-                                // 重新渲染Markdown（只渲染已显示的部分）
-                                answerContentDiv.innerHTML = renderMarkdown(partialText);
-                                lastAnswerLength = displayLength;
-                            }
-                            chatContainer.scrollTop = chatContainer.scrollHeight;
-                        }
-                    }
-                }, isFinal ? 0 : 20); // 更快的打字机效果
-            }
+            
+            // 添加新文本
+            currentText += text;
+            
+            // 应用Markdown渲染
+            element.innerHTML = renderMarkdown(currentText);
         }
 
         // 添加消息到聊天界面
-        function addMessage(content, type, sources = []) {
+        function addMessage(content, type, options = {}) {
             const chatContainer = document.getElementById('chat-container');
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}-message`;
-
-            let messageContent = content;
-            if (type === 'bot' && sources.length > 0) {
-                messageContent += `<div class="source-info"><i class="fas fa-info-circle"></i> 来源: ${sources.join(', ')}</div>`;
+            
+            if (type === 'user') {
+                messageDiv.innerHTML = content;
+            } else {
+                // 使用Markdown渲染非用户消息
+                messageDiv.innerHTML = renderMarkdown(content);
             }
-
-            messageDiv.innerHTML = messageContent;
+            
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        // 回车发送
-        document.getElementById('question-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                askQuestion();
-            }
-        });
-
-        // 清空知识库功能
-        document.getElementById('clear-kb-btn').addEventListener('click', function() {
-            const modal = new bootstrap.Modal(document.getElementById('clearKbModal'));
-            modal.show();
-        });
-
-        document.getElementById('confirm-clear-kb').addEventListener('click', async function() {
-            try {
-                const response = await fetch('/clear', {
-                    method: 'POST',
-                });
-                const data = await response.json();
-                
-                if (response.ok) {
-                    // 立即将计数器设置为0
-                    document.getElementById('doc-count').textContent = '0';
-                    showToast('success', '知识库已清空');
-                    // 再次请求更新统计信息以确保同步
-                    await updateStats();
+        // 清空知识库
+        function clearKnowledgeBase() {
+            fetch('/clear', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('清空知识库失败: ' + data.error);
                 } else {
-                    showToast('error', data.error || '清空知识库失败');
+                    alert('知识库已清空');
+                    loadStats();
                 }
-            } catch (error) {
-                showToast('error', '清空知识库时发生错误');
-            } finally {
-                // 关闭确认对话框
-                const modal = bootstrap.Modal.getInstance(document.getElementById('clearKbModal'));
-                modal.hide();
-            }
-        });
-
-        // 更新统计信息
-        async function updateStats() {
-            try {
-                const response = await fetch('/stats');
-                const data = await response.json();
-                if (response.ok) {
-                    document.getElementById('doc-count').textContent = data.row_count || 0;
-                }
-            } catch (error) {
-                console.error('获取统计信息失败:', error);
-            }
+            })
+            .catch(error => {
+                alert('清空知识库失败: ' + error.message);
+            });
         }
-
-        // 定期更新统计信息
-        setInterval(updateStats, 30000); // 每30秒更新一次
-        updateStats(); // 初始加载
     </script>
 </body>
 </html> 
