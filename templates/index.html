@@ -86,6 +86,27 @@
             background: #e9ecef;
             color: #333;
         }
+        .think-message {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+            font-style: italic;
+        }
+        .answer-message {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }
+        .think-header {
+            font-weight: bold;
+            color: #856404;
+            margin-bottom: 5px;
+        }
+        .answer-header {
+            font-weight: bold;
+            color: #0c5460;
+            margin-bottom: 5px;
+        }
         .source-info {
             font-size: 0.8em;
             color: #6c757d;
@@ -423,6 +444,11 @@
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
 
+            // 创建思考内容容器
+            let thinkDiv = null;
+            let answerDiv = null;
+            let currentDiv = messageDiv;
+
             // 发送流式请求
             fetch('/ask_stream', {
                 method: 'POST',
@@ -474,10 +500,45 @@
                                     askBtn.disabled = false;
                                     askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
                                     return;
-                                } else {
-                                    // 添加字符到消息（打字机效果）
-                                    messageDiv.innerHTML += data;
+                                } else if (data === '[THINK_START]') {
+                                    // 开始思考内容
+                                    thinkDiv = document.createElement('div');
+                                    thinkDiv.className = 'message think-message';
+                                    thinkDiv.innerHTML = '<div class="think-header"><i class="fas fa-brain"></i> 思考过程</div>';
+                                    chatContainer.appendChild(thinkDiv);
+                                    currentDiv = thinkDiv;
                                     chatContainer.scrollTop = chatContainer.scrollHeight;
+                                } else if (data === '[THINK_END]') {
+                                    // 思考结束
+                                    currentDiv = messageDiv;
+                                } else if (data === '[ANSWER_START]') {
+                                    // 开始正式回答
+                                    answerDiv = document.createElement('div');
+                                    answerDiv.className = 'message answer-message';
+                                    answerDiv.innerHTML = '<div class="answer-header"><i class="fas fa-comment"></i> 正式回答</div>';
+                                    chatContainer.appendChild(answerDiv);
+                                    currentDiv = answerDiv;
+                                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                                } else if (data.startsWith('[THINK] ')) {
+                                    // 思考内容
+                                    const thinkContent = data.slice(8);
+                                    if (thinkDiv) {
+                                        thinkDiv.innerHTML += thinkContent;
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                    }
+                                } else if (data.startsWith('[ANSWER] ')) {
+                                    // 正式回答内容
+                                    const answerContent = data.slice(9);
+                                    if (answerDiv) {
+                                        answerDiv.innerHTML += answerContent;
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                    }
+                                } else {
+                                    // 兼容旧格式，直接添加到当前容器
+                                    if (currentDiv) {
+                                        currentDiv.innerHTML += data;
+                                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                                    }
                                 }
                             }
                         }

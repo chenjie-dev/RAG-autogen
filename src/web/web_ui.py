@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 import threading
 import queue
+import re
 
 # 导入我们的RAG系统
 from core.rag_finance_qa import FinanceRAGSystem
@@ -131,17 +132,41 @@ def ask_question():
             messages=[{'role': 'user', 'content': prompt}]
         )
         answer = response['message']['content']
+        
+        # 分离思考内容和正式回答
+        think_content, answer_content = separate_think_and_answer(answer)
+        
         return jsonify({
-            'answer': answer,
+            'think_content': think_content,
+            'answer': answer_content,
             'context': context_text[:500] + "..." if len(context_text) > 500 else context_text,
             'sources': [hit["source"] for hit in context]
         })
     except Exception as e:
         return jsonify({'error': f'生成答案时出错: {str(e)}'}), 500
 
+def separate_think_and_answer(text):
+    """分离思考内容和正式回答"""
+    if not text:
+        return "", ""
+    
+    import re
+    
+    # 提取<think>...</think>块中的内容
+    think_pattern = r'<think>(.*?)</think>'
+    think_match = re.search(think_pattern, text, flags=re.DOTALL)
+    think_content = think_match.group(1).strip() if think_match else ""
+    
+    # 移除<think>...</think>块，得到正式回答
+    answer_content = re.sub(think_pattern, '', text, flags=re.DOTALL)
+    answer_content = re.sub(r'\n\s*\n', '\n\n', answer_content)  # 清理多余的空行
+    answer_content = answer_content.strip()
+    
+    return think_content, answer_content
+
 @app.route('/ask_stream', methods=['POST'])
 def ask_question_stream():
-    """流式问答接口，支持打字机效果"""
+    """流式问答接口，支持打字机效果，区分思考内容和正式回答"""
     global rag_system
     if rag_system is None:
         return jsonify({'error': 'RAG系统未初始化'}), 500
@@ -166,15 +191,51 @@ def ask_question_stream():
                 )
                 
                 full_answer = ""
+                in_think_block = False
+                think_content = ""
+                answer_content = ""
+                think_complete = False
+                
                 for chunk in stream:
                     if 'message' in chunk and 'content' in chunk['message']:
                         content = chunk['message']['content']
-                        # 跳过思考过程
-                        if content.startswith('<think>'):
+                        
+                        # 检测思考块的开始
+                        if '<think>' in content:
+                            in_think_block = True
+                            # 发送思考开始标记
+                            yield f"data: [THINK_START]\n\n"
+                            # 移除<think>标签
+                            content = content.replace('<think>', '')
+                        
+                        # 检测思考块的结束
+                        if '</think>' in content:
+                            in_think_block = False
+                            think_complete = True
+                            # 发送思考结束标记
+                            yield f"data: [THINK_END]\n\n"
+                            # 发送正式回答开始标记
+                            yield f"data: [ANSWER_START]\n\n"
+                            # 移除</think>标签
+                            content = content.replace('</think>', '')
+                        
+                        # 如果在思考块内，发送思考内容
+                        if in_think_block:
+                            think_content += content
+                            if content.strip():  # 只发送非空内容
+                                yield f"data: [THINK] {content}\n\n"
                             continue
-                        full_answer += content
-                        # 发送每个字符
-                        yield f"data: {content}\n\n"
+                        
+                        # 如果不在思考块内，这是正式回答内容
+                        if content.strip():  # 只发送非空内容
+                            answer_content += content
+                            full_answer += content
+                            # 发送正式回答内容
+                            yield f"data: [ANSWER] {content}\n\n"
+                
+                # 如果没有检测到思考块，但已经开始回答，发送回答开始标记
+                if not think_complete and answer_content.strip():
+                    yield f"data: [ANSWER_START]\n\n"
                 
                 # 发送结束标记
                 yield f"data: [DONE]\n\n"
