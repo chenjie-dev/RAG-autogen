@@ -161,13 +161,17 @@ class VectorStore:
             return []
     
     def clear_collection(self):
-        """清空集合"""
+        """清空集合并重新创建"""
         try:
             if utility.has_collection(self.collection_name):
                 utility.drop_collection(self.collection_name)
                 print(f"已删除集合: {self.collection_name}")
+                # 重新创建集合
+                self._create_collection()
+                print(f"已重新创建集合: {self.collection_name}")
         except Exception as e:
             print(f"删除集合时出错: {str(e)}")
+            raise
     
     def get_collection_stats(self) -> Dict:
         """获取集合统计信息

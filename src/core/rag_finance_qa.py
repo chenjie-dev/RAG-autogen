@@ -195,6 +195,16 @@ class FinanceRAGSystem:
                 time.sleep(retry_delay)
         return "多次尝试后仍未能生成答案。"
 
+    def clear_knowledge_base(self):
+        """清空知识库"""
+        try:
+            self.vector_store.clear_collection()
+            print_success("知识库已清空")
+            return True
+        except Exception as e:
+            print_error(f"清空知识库时出错: {str(e)}")
+            return False
+
 def main():
     """主函数"""
     try:

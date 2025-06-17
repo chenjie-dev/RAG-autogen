@@ -282,7 +282,26 @@ def get_stats():
         stats = rag_system.vector_store.get_collection_stats()
         return jsonify(stats)
     except Exception as e:
+        # 如果是集合不存在的错误，返回空集合状态
+        if "collection not found" in str(e).lower():
+            return jsonify({'row_count': 0, 'collection_name': rag_system.vector_store.collection_name})
         return jsonify({'error': f'获取统计信息时出错: {str(e)}'}), 500
+
+@app.route('/clear', methods=['POST'])
+def clear_knowledge_base():
+    """清空知识库"""
+    global rag_system
+    if rag_system is None:
+        return jsonify({'error': 'RAG系统未初始化'}), 500
+    
+    try:
+        success = rag_system.clear_knowledge_base()
+        if success:
+            return jsonify({'message': '知识库已清空'})
+        else:
+            return jsonify({'error': '清空知识库失败'}), 500
+    except Exception as e:
+        return jsonify({'error': f'清空知识库时出错: {str(e)}'}), 500
 
 if __name__ == '__main__':
     print("Web UI 启动中...")

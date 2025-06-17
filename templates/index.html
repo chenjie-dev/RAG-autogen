@@ -238,10 +238,21 @@
                     </div>
                 </div>
                 <div class="col-md-4">
-                    <div class="card stats-card">
-                        <div class="card-body text-center">
-                            <h5><i class="fas fa-clock"></i> 系统状态</h5>
-                            <div id="system-status">运行中</div>
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">系统状态</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <strong>知识库文档数：</strong>
+                                    <span id="doc-count">0</span>
+                                </div>
+                                <button id="clear-kb-btn" class="btn btn-danger btn-sm">
+                                    <i class="fas fa-trash-alt"></i> 清空知识库
+                                </button>
+                            </div>
+                            <div id="system-status"></div>
                         </div>
                     </div>
                 </div>
@@ -309,6 +320,28 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加确认对话框 -->
+    <div class="modal fade" id="clearKbModal" tabindex="-1" aria-labelledby="clearKbModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="clearKbModalLabel">确认清空知识库</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        警告：此操作将清空所有知识库内容，且无法恢复。是否继续？
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger" id="confirm-clear-kb">确认清空</button>
                 </div>
             </div>
         </div>
@@ -743,6 +776,52 @@
                 askQuestion();
             }
         });
+
+        // 清空知识库功能
+        document.getElementById('clear-kb-btn').addEventListener('click', function() {
+            const modal = new bootstrap.Modal(document.getElementById('clearKbModal'));
+            modal.show();
+        });
+
+        document.getElementById('confirm-clear-kb').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/clear', {
+                    method: 'POST',
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast('success', '知识库已清空');
+                    // 更新统计信息
+                    updateStats();
+                } else {
+                    showToast('error', data.error || '清空知识库失败');
+                }
+            } catch (error) {
+                showToast('error', '清空知识库时发生错误');
+            } finally {
+                // 关闭确认对话框
+                const modal = bootstrap.Modal.getInstance(document.getElementById('clearKbModal'));
+                modal.hide();
+            }
+        });
+
+        // 更新统计信息
+        async function updateStats() {
+            try {
+                const response = await fetch('/stats');
+                const data = await response.json();
+                if (response.ok) {
+                    document.getElementById('doc-count').textContent = data.row_count || 0;
+                }
+            } catch (error) {
+                console.error('获取统计信息失败:', error);
+            }
+        }
+
+        // 定期更新统计信息
+        setInterval(updateStats, 30000); // 每30秒更新一次
+        updateStats(); // 初始加载
     </script>
 </body>
 </html> 
