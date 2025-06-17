@@ -571,14 +571,7 @@
             const chatContainer = document.getElementById('chat-container');
             const askBtn = document.getElementById('ask-btn');
             
-            // 创建机器人消息容器
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message bot-message';
-            messageDiv.innerHTML = '<i class="fas fa-robot"></i> ';
-            chatContainer.appendChild(messageDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-
-            // 创建思考内容容器
+            // 创建思考内容容器和回答容器的变量
             let thinkDiv = null;
             let answerDiv = null;
             let thinkBuffer = '';
@@ -642,7 +635,7 @@
                                     return;
                                 } else if (data.startsWith('[ERROR]')) {
                                     // 错误处理
-                                    messageDiv.innerHTML += '<span style="color: red;">错误: ' + data.slice(8) + '</span>';
+                                    showToast('error', data.slice(8));
                                     isProcessing = false;
                                     askBtn.disabled = false;
                                     askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
@@ -654,11 +647,6 @@
                                     thinkDiv.innerHTML = '<div class="think-header"><i class="fas fa-brain"></i> 思考过程</div><div class="think-content"></div>';
                                     chatContainer.appendChild(thinkDiv);
                                     chatContainer.scrollTop = chatContainer.scrollHeight;
-                                } else if (data === '[THINK_END]') {
-                                    // 思考结束，渲染最后的思考内容
-                                    if (thinkBuffer.trim()) {
-                                        renderThinkContent(thinkBuffer, true);
-                                    }
                                 } else if (data === '[ANSWER_START]') {
                                     // 开始正式回答
                                     answerDiv = document.createElement('div');
@@ -676,12 +664,6 @@
                                     const answerContent = data.slice(9);
                                     answerBuffer += answerContent;
                                     renderAnswerContent(answerBuffer, false);
-                                } else {
-                                    // 兼容旧格式，直接添加到当前容器
-                                    if (messageDiv) {
-                                        messageDiv.innerHTML += data;
-                                        chatContainer.scrollTop = chatContainer.scrollHeight;
-                                    }
                                 }
                             }
                         }
@@ -694,7 +676,7 @@
                 return readStream();
             })
             .catch(error => {
-                messageDiv.innerHTML += '<span style="color: red;">网络连接出现问题: ' + error.message + '</span>';
+                showToast('error', '网络连接出现问题: ' + error.message);
                 isProcessing = false;
                 askBtn.disabled = false;
                 askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
@@ -744,7 +726,7 @@
                                 const fullText = tempDiv.textContent || tempDiv.innerText || '';
                                 
                                 // 计算显示长度
-                                const displayLength = Math.min(fullText.length, lastAnswerLength + 1);
+                                const displayLength = Math.min(fullText.length, lastAnswerLength + 3);
                                 
                                 // 简单方法：直接截取文本并重新渲染
                                 const partialText = fullText.substring(0, displayLength);
