@@ -243,16 +243,22 @@
                             <h5 class="mb-0">系统状态</h5>
                         </div>
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
                                 <div>
-                                    <strong>知识库文档数：</strong>
-                                    <span id="doc-count">0</span>
+                                    <div class="mb-2">
+                                        <i class="fas fa-database me-2"></i>
+                                        <strong>知识库状态：</strong>
+                                        <span id="doc-count">0</span> 条记录
+                                    </div>
+                                    <div>
+                                        <i class="fas fa-circle text-success me-2"></i>
+                                        <span id="system-status">系统运行中</span>
+                                    </div>
                                 </div>
                                 <button id="clear-kb-btn" class="btn btn-danger btn-sm">
                                     <i class="fas fa-trash-alt"></i> 清空知识库
                                 </button>
                             </div>
-                            <div id="system-status"></div>
                         </div>
                     </div>
                 </div>
@@ -791,9 +797,11 @@
                 const data = await response.json();
                 
                 if (response.ok) {
+                    // 立即将计数器设置为0
+                    document.getElementById('doc-count').textContent = '0';
                     showToast('success', '知识库已清空');
-                    // 更新统计信息
-                    updateStats();
+                    // 再次请求更新统计信息以确保同步
+                    await updateStats();
                 } else {
                     showToast('error', data.error || '清空知识库失败');
                 }
