@@ -6,6 +6,9 @@
     <title>金融知识RAG问答系统</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- 添加Markdown渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
     <style>
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -129,6 +132,79 @@
             background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
             color: white;
         }
+        
+        /* Markdown样式 */
+        .markdown-content h1, .markdown-content h2, .markdown-content h3, 
+        .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+            font-weight: bold;
+        }
+        .markdown-content h1 { font-size: 1.5em; }
+        .markdown-content h2 { font-size: 1.3em; }
+        .markdown-content h3 { font-size: 1.1em; }
+        
+        .markdown-content p {
+            margin-bottom: 0.5em;
+            line-height: 1.6;
+        }
+        
+        .markdown-content ul, .markdown-content ol {
+            margin-bottom: 0.5em;
+            padding-left: 1.5em;
+        }
+        
+        .markdown-content li {
+            margin-bottom: 0.25em;
+        }
+        
+        .markdown-content code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .markdown-content pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 0.5em 0;
+        }
+        
+        .markdown-content blockquote {
+            border-left: 4px solid #dee2e6;
+            padding-left: 1em;
+            margin: 0.5em 0;
+            color: #6c757d;
+        }
+        
+        .markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 0.5em 0;
+        }
+        
+        .markdown-content th, .markdown-content td {
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        .markdown-content th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        
+        .markdown-content strong {
+            font-weight: bold;
+        }
+        
+        .markdown-content em {
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -242,6 +318,25 @@
     <script>
         // 全局变量
         let isProcessing = false;
+
+        // 配置Markdown渲染器
+        marked.setOptions({
+            breaks: true,  // 支持换行
+            gfm: true,     // 支持GitHub风格Markdown
+            sanitize: false // 允许HTML标签
+        });
+
+        // 安全的Markdown渲染函数
+        function renderMarkdown(text) {
+            try {
+                // 使用DOMPurify清理HTML
+                const html = marked.parse(text);
+                return DOMPurify.sanitize(html);
+            } catch (error) {
+                console.error('Markdown渲染错误:', error);
+                return text; // 如果渲染失败，返回原始文本
+            }
+        }
 
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -447,7 +542,12 @@
             // 创建思考内容容器
             let thinkDiv = null;
             let answerDiv = null;
-            let currentDiv = messageDiv;
+            let thinkBuffer = '';
+            let answerBuffer = '';
+            let thinkRenderTimer = null;
+            let answerRenderTimer = null;
+            let lastThinkLength = 0;
+            let lastAnswerLength = 0;
 
             // 发送流式请求
             fetch('/ask_stream', {
@@ -471,7 +571,15 @@
                 function readStream() {
                     return reader.read().then(({ done, value }) => {
                         if (done) {
-                            // 流结束，恢复按钮状态
+                            // 流结束，渲染最后的缓冲区内容
+                            if (thinkBuffer.trim()) {
+                                renderThinkContent(thinkBuffer, true);
+                            }
+                            if (answerBuffer.trim()) {
+                                renderAnswerContent(answerBuffer, true);
+                            }
+                            
+                            // 恢复按钮状态
                             isProcessing = false;
                             askBtn.disabled = false;
                             askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
@@ -504,39 +612,35 @@
                                     // 开始思考内容
                                     thinkDiv = document.createElement('div');
                                     thinkDiv.className = 'message think-message';
-                                    thinkDiv.innerHTML = '<div class="think-header"><i class="fas fa-brain"></i> 思考过程</div>';
+                                    thinkDiv.innerHTML = '<div class="think-header"><i class="fas fa-brain"></i> 思考过程</div><div class="think-content"></div>';
                                     chatContainer.appendChild(thinkDiv);
-                                    currentDiv = thinkDiv;
                                     chatContainer.scrollTop = chatContainer.scrollHeight;
                                 } else if (data === '[THINK_END]') {
-                                    // 思考结束
-                                    currentDiv = messageDiv;
+                                    // 思考结束，渲染最后的思考内容
+                                    if (thinkBuffer.trim()) {
+                                        renderThinkContent(thinkBuffer, true);
+                                    }
                                 } else if (data === '[ANSWER_START]') {
                                     // 开始正式回答
                                     answerDiv = document.createElement('div');
                                     answerDiv.className = 'message answer-message';
-                                    answerDiv.innerHTML = '<div class="answer-header"><i class="fas fa-comment"></i> 正式回答</div>';
+                                    answerDiv.innerHTML = '<div class="answer-header"><i class="fas fa-comment"></i> 正式回答</div><div class="answer-content markdown-content"></div>';
                                     chatContainer.appendChild(answerDiv);
-                                    currentDiv = answerDiv;
                                     chatContainer.scrollTop = chatContainer.scrollHeight;
                                 } else if (data.startsWith('[THINK] ')) {
                                     // 思考内容
                                     const thinkContent = data.slice(8);
-                                    if (thinkDiv) {
-                                        thinkDiv.innerHTML += thinkContent;
-                                        chatContainer.scrollTop = chatContainer.scrollHeight;
-                                    }
+                                    thinkBuffer += thinkContent;
+                                    renderThinkContent(thinkBuffer, false);
                                 } else if (data.startsWith('[ANSWER] ')) {
                                     // 正式回答内容
                                     const answerContent = data.slice(9);
-                                    if (answerDiv) {
-                                        answerDiv.innerHTML += answerContent;
-                                        chatContainer.scrollTop = chatContainer.scrollHeight;
-                                    }
+                                    answerBuffer += answerContent;
+                                    renderAnswerContent(answerBuffer, false);
                                 } else {
                                     // 兼容旧格式，直接添加到当前容器
-                                    if (currentDiv) {
-                                        currentDiv.innerHTML += data;
+                                    if (messageDiv) {
+                                        messageDiv.innerHTML += data;
                                         chatContainer.scrollTop = chatContainer.scrollHeight;
                                     }
                                 }
@@ -556,6 +660,65 @@
                 askBtn.disabled = false;
                 askBtn.innerHTML = '<i class="fas fa-paper-plane"></i> 发送';
             });
+
+            // 渲染思考内容（保持打字机效果）
+            function renderThinkContent(content, isFinal) {
+                if (thinkRenderTimer) {
+                    clearTimeout(thinkRenderTimer);
+                }
+                
+                thinkRenderTimer = setTimeout(() => {
+                    if (thinkDiv) {
+                        const thinkContentDiv = thinkDiv.querySelector('.think-content');
+                        if (thinkContentDiv) {
+                            // 思考内容保持纯文本，逐字符显示
+                            thinkContentDiv.textContent = content;
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        }
+                    }
+                }, isFinal ? 0 : 50); // 思考内容快速显示
+            }
+
+            // 渲染回答内容（Markdown + 打字机效果）
+            function renderAnswerContent(content, isFinal) {
+                if (answerRenderTimer) {
+                    clearTimeout(answerRenderTimer);
+                }
+                
+                answerRenderTimer = setTimeout(() => {
+                    if (answerDiv) {
+                        const answerContentDiv = answerDiv.querySelector('.answer-content');
+                        if (answerContentDiv) {
+                            if (isFinal) {
+                                // 最终渲染，完整Markdown
+                                answerContentDiv.innerHTML = renderMarkdown(content);
+                            } else {
+                                // 流式渲染，使用简化的打字机效果
+                                // 先渲染完整内容
+                                const fullHtml = renderMarkdown(content);
+                                
+                                // 创建一个临时容器
+                                const tempDiv = document.createElement('div');
+                                tempDiv.innerHTML = fullHtml;
+                                
+                                // 获取纯文本长度
+                                const fullText = tempDiv.textContent || tempDiv.innerText || '';
+                                
+                                // 计算显示长度
+                                const displayLength = Math.min(fullText.length, lastAnswerLength + 1);
+                                
+                                // 简单方法：直接截取文本并重新渲染
+                                const partialText = fullText.substring(0, displayLength);
+                                
+                                // 重新渲染Markdown（只渲染已显示的部分）
+                                answerContentDiv.innerHTML = renderMarkdown(partialText);
+                                lastAnswerLength = displayLength;
+                            }
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        }
+                    }
+                }, isFinal ? 0 : 20); // 更快的打字机效果
+            }
         }
 
         // 添加消息到聊天界面
