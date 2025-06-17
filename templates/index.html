@@ -366,11 +366,11 @@
                     <div id="upload-status" class="mb-2"></div>
 
                     <!-- 文件上传区域 -->
-                    <div class="upload-area" id="upload-area">
+                    <div class="upload-area" id="upload-area" style="position: relative; cursor: pointer;">
                         <i class="fas fa-cloud-upload-alt fa-2x mb-2"></i>
                         <h6>拖拽文件到此处或点击上传</h6>
                         <small class="text-muted d-block">支持 PDF, DOCX, MD, PPTX, TXT 格式</small>
-                        <input type="file" id="file-input" class="d-none" multiple>
+                        <input type="file" id="file-input" accept=".pdf,.docx,.md,.pptx,.txt" style="position: absolute; opacity: 0; width: 100%; height: 100%; top: 0; left: 0; cursor: pointer; z-index: 2;" multiple>
                         <div id="upload-progress" class="progress mt-2 d-none">
                             <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                         </div>
@@ -513,7 +513,6 @@
 
         // 设置文件上传
         function setupFileUpload() {
-            const uploadArea = document.getElementById('upload-area');
             const fileInput = document.getElementById('file-input');
             const uploadStatus = document.getElementById('upload-status');
             const uploadProgress = document.getElementById('upload-progress');
@@ -521,48 +520,48 @@
 
             console.log('File upload script initialized'); // 调试日志
 
-            // 点击上传区域触发文件选择
-            uploadArea.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                fileInput.click();
-                console.log('Upload area clicked'); // 调试日志
+            // 文件选择处理
+            fileInput.addEventListener('change', (e) => {
+                console.log('File selected:', e.target.files); // 调试日志
+                const files = e.target.files;
+                if (files.length > 0) {
+                    handleFileUpload(files[0]);
+                }
             });
 
             // 拖拽相关事件
+            const uploadArea = document.getElementById('upload-area');
+            
             uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 uploadArea.classList.add('dragover');
             });
 
-            uploadArea.addEventListener('dragleave', () => {
+            uploadArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 uploadArea.classList.remove('dragover');
             });
 
             uploadArea.addEventListener('drop', (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 uploadArea.classList.remove('dragover');
                 const files = e.dataTransfer.files;
-                handleFiles(files);
-            });
-
-            // 文件选择处理
-            fileInput.addEventListener('change', (e) => {
-                console.log('File selected:', e.target.files); // 调试日志
-                const files = e.target.files;
-                handleFiles(files);
+                if (files.length > 0) {
+                    handleFileUpload(files[0]);
+                }
             });
         }
 
         // 处理文件上传
-        function handleFiles(files) {
-            if (files.length === 0) return;
-
+        function handleFileUpload(file) {
             const uploadStatus = document.getElementById('upload-status');
             const uploadProgress = document.getElementById('upload-progress');
             const progressBar = uploadProgress.querySelector('.progress-bar');
 
-            console.log('Processing files:', files); // 调试日志
+            console.log('Processing file:', file); // 调试日志
 
             // 显示上传状态
             uploadStatus.textContent = '准备上传文件...';
@@ -572,9 +571,7 @@
 
             // 创建FormData对象
             const formData = new FormData();
-            for (let file of files) {
-                formData.append('file', file);
-            }
+            formData.append('file', file);
 
             // 发送上传请求
             fetch('/upload', {
@@ -598,6 +595,8 @@
                 progressBar.style.width = '100%';
                 // 更新统计信息
                 loadStats();
+                // 开始轮询处理状态
+                startStatusPolling();
             })
             .catch(error => {
                 console.error('Upload error:', error); // 调试日志
@@ -643,13 +642,17 @@
             const progressBar = document.querySelector('.progress');
             const progressBarInner = document.querySelector('.progress-bar');
 
-            statusDiv.textContent = data.message;
+            if (statusDiv) {
+                statusDiv.textContent = data.message || '空闲';
+            }
             
-            if (data.status === 'processing') {
-                progressBar.style.display = 'block';
-                progressBarInner.style.width = data.progress + '%';
-            } else {
-                progressBar.style.display = 'none';
+            if (progressBar && progressBarInner) {
+                if (data.status === 'processing') {
+                    progressBar.style.display = 'block';
+                    progressBarInner.style.width = (data.progress || 0) + '%';
+                } else {
+                    progressBar.style.display = 'none';
+                }
             }
         }
 
