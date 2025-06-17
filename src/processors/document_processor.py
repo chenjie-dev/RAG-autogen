@@ -80,6 +80,20 @@ class DocumentProcessor:
         return texts
 
     @staticmethod
+    def extract_text_from_txt(file_path: str) -> List[str]:
+        """从文本文件中提取文本"""
+        texts = []
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+                # 按段落分割
+                paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+                texts.extend(paragraphs)
+        except Exception as e:
+            print(f"处理文本文件时出错: {str(e)}")
+        return texts
+
+    @staticmethod
     def process_file(file_path: str) -> List[str]:
         """处理各种格式的文件并提取文本"""
         file_ext = os.path.splitext(file_path)[1].lower()
@@ -88,7 +102,8 @@ class DocumentProcessor:
             '.pdf': DocumentProcessor.extract_text_from_pdf,
             '.docx': DocumentProcessor.extract_text_from_docx,
             '.md': DocumentProcessor.extract_text_from_markdown,
-            '.pptx': DocumentProcessor.extract_text_from_pptx
+            '.pptx': DocumentProcessor.extract_text_from_pptx,
+            '.txt': DocumentProcessor.extract_text_from_txt
         }
         
         if file_ext not in processors:

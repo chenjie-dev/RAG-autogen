@@ -7,10 +7,10 @@ import sys
 from datetime import datetime
 
 # 导入自定义模块
-from document_processor import DocumentProcessor
-from text_utils import TextUtils
-from vector_store import VectorStore
-from ui_utils import print_section, typewriter_print, print_info, print_warning, print_success
+from processors.document_processor import DocumentProcessor
+from utils.text_utils import TextUtils
+from utils.vector_store import VectorStore
+from utils.ui_utils import print_section, typewriter_print, print_info, print_warning, print_success, print_error
 
 # 加载环境变量
 load_dotenv()

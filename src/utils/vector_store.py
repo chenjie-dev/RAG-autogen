@@ -177,9 +177,10 @@ class VectorStore:
         """
         try:
             if self.collection:
-                stats = self.collection.get_statistics()
+                # 使用 num_entities 替代 get_statistics
+                row_count = self.collection.num_entities
                 return {
-                    "row_count": stats.get("row_count", 0),
+                    "row_count": row_count,
                     "collection_name": self.collection_name
                 }
         except Exception as e:
