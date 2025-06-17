@@ -1,7 +1,30 @@
 #!/usr/bin/env python3
 """
 金融知识RAG问答系统 - 统一启动脚本
-支持命令行模式和Web UI模式
+====================================
+
+功能说明:
+- 系统状态检查: 检查依赖包、服务连接状态
+- 命令行模式: 启动交互式命令行问答界面
+- Web UI模式: 启动Flask Web服务器，提供图形化界面
+- 统一入口: 提供单一启动点，简化系统使用
+
+使用方法:
+    python3 start.py [mode] [options]
+    
+参数:
+    mode: cli(命令行) | web(Web界面) | status(状态检查)
+    --check: 仅检查系统状态，不启动服务
+
+示例:
+    python3 start.py status      # 检查系统状态
+    python3 start.py cli         # 启动命令行模式
+    python3 start.py web         # 启动Web界面
+    python3 start.py --check     # 仅检查依赖和服务
+
+作者: RAG系统开发团队
+版本: 1.0.0
+更新日期: 2024
 """
 
 import os

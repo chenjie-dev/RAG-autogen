@@ -1,11 +1,21 @@
-flask>=3.0.0
-pymilvus>=2.3.0
-sentence-transformers>=2.2.0
-ollama>=0.1.0
-pdfplumber>=0.9.0
-python-docx>=0.8.11
-markdown>=3.4.0
-beautifulsoup4>=4.11.0
-python-pptx>=0.6.21
-python-dotenv>=1.0.0
-numpy>=1.21.0 
+# 金融知识RAG问答系统依赖包列表
+# =====================================
+# 
+# 核心框架:
+flask>=3.0.0                    # Web框架，用于构建Web界面
+pymilvus>=2.3.0                 # Milvus向量数据库Python客户端
+
+# AI和机器学习:
+sentence-transformers>=2.2.0    # 文本嵌入模型，用于生成文档向量
+ollama>=0.1.0                   # Ollama API客户端，用于大语言模型调用
+
+# 文档处理:
+pdfplumber>=0.9.0               # PDF文档解析和文本提取
+python-docx>=0.8.11             # Word文档(.docx)处理
+markdown>=3.4.0                 # Markdown文档解析
+beautifulsoup4>=4.11.0          # HTML解析，用于Markdown转HTML
+python-pptx>=0.6.21             # PowerPoint文档(.pptx)处理
+
+# 工具库:
+python-dotenv>=1.0.0            # 环境变量管理
+numpy>=1.21.0                   # 数值计算库 

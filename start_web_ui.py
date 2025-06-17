@@ -1,7 +1,31 @@
 #!/usr/bin/env python3
 """
-Web UI 启动脚本
-用于启动金融知识RAG问答系统的Web界面
+Web UI独立启动脚本
+==================
+
+功能说明:
+- 独立启动Web界面服务
+- 提供图形化的文档上传和问答界面
+- 支持流式回答和实时交互
+- 可作为独立服务运行
+
+使用方法:
+    python3 start_web_ui.py
+
+主要功能:
+1. 文档上传和管理
+2. 知识库查询和问答
+3. 流式回答显示
+4. 用户友好的Web界面
+
+注意:
+- 此脚本已被 start.py 统一管理
+- 建议使用 start.py web 启动Web界面
+- 保留此文件用于独立测试和开发
+
+作者: RAG系统开发团队
+版本: 1.0.0
+更新日期: 2024
 """
 
 import os
@@ -9,6 +33,11 @@ import sys
 import subprocess
 import time
 from pathlib import Path
+import tempfile
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import threading
+import queue
 
 def check_dependencies():
     """检查依赖是否安装"""

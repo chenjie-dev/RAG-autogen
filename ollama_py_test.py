@@ -1,3 +1,28 @@
+#!/usr/bin/env python3
+"""
+Ollama API测试脚本
+==================
+
+功能说明:
+- 测试Ollama API连接是否正常
+- 验证模型是否可用
+- 测试基本的文本生成功能
+- 用于系统部署前的连接测试
+
+使用方法:
+    python3 ollama_py_test.py
+
+测试内容:
+1. 连接Ollama服务
+2. 列出可用模型
+3. 测试文本生成
+4. 错误处理和重试机制
+
+作者: RAG系统开发团队
+版本: 1.0.0
+更新日期: 2024
+"""
+
 import ollama
 import sys
 import textwrap

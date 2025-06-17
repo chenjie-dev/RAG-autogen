@@ -1,3 +1,31 @@
+# 金融知识RAG问答系统 - Docker Compose配置
+# ============================================
+# 
+# 功能说明:
+# - 启动Milvus向量数据库服务
+# - 启动MinIO对象存储服务
+# - 启动etcd元数据服务
+# - 提供完整的向量数据库基础设施
+# 
+# 服务组件:
+# - Milvus: 向量数据库，用于存储和检索文档向量
+# - MinIO: 对象存储，用于存储原始文档文件
+# - etcd: 元数据存储，用于Milvus的元数据管理
+# 
+# 使用方法:
+#   docker-compose up -d    # 后台启动所有服务
+#   docker-compose down     # 停止所有服务
+#   docker-compose logs     # 查看服务日志
+# 
+# 端口说明:
+# - Milvus: 19530 (API), 9091 (Web UI)
+# - MinIO: 9000 (API), 9001 (Web UI)
+# - etcd: 2379 (API), 2380 (集群通信)
+# 
+# 数据持久化:
+# - 所有数据存储在 ./volumes/ 目录下
+# - 重启容器后数据不会丢失
+
 version: '3.5'
 
 services:
