@@ -10,9 +10,16 @@ import queue
 from core.rag_finance_qa import FinanceRAGSystem
 from utils.ui_utils import print_info, print_warning, print_error, print_success
 
-app = Flask(__name__)
+# 获取项目根目录
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+STATIC_DIR = os.path.join(BASE_DIR, 'static')
+
+app = Flask(__name__, 
+           template_folder=TEMPLATE_DIR,
+           static_folder=STATIC_DIR)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 
 # 确保上传目录存在
