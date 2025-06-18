@@ -4,7 +4,30 @@
 
 ## 🚀 快速启动
 
-### 方式一：Docker部署（推荐）
+### 方式一：Kubernetes部署（推荐生产环境）
+
+详细部署说明请参考 [K8S_DEPLOYMENT.md](K8S_DEPLOYMENT.md)
+
+```bash
+# 1. 创建命名空间
+kubectl apply -f k8s/namespace.yaml
+
+# 2. 创建配置
+kubectl apply -f k8s/rag-config.yaml
+
+# 3. 创建存储
+kubectl apply -f k8s/rag-web-pvc.yaml
+
+# 4. 部署服务
+kubectl apply -f k8s/milvus-deployment.yaml
+kubectl apply -f k8s/rag-web-deployment.yaml
+
+# 5. 访问服务
+# 本地访问：http://localhost:30500
+# 局域网访问：http://<NodeIP>:30500
+```
+
+### 方式二：Docker部署（推荐开发环境）
 
 #### 完整部署（包含Milvus，连接外部Ollama）
 ```bash
@@ -28,7 +51,7 @@ docker-compose up -d
 docker-compose -f docker-compose.simple.yml up -d
 ```
 
-### 方式二：本地部署
+### 方式三：本地部署
 
 #### 1. 检查系统状态
 ```bash
@@ -52,9 +75,16 @@ python3 start.py web
 - **向量数据库**: 使用Milvus存储文档向量
 - **双界面**: 命令行和Web界面
 - **流式输出**: 支持打字机效果的实时回答
-- **容器化部署**: 支持Docker一键部署
+- **容器化部署**: 支持Docker和Kubernetes部署
+- **配置管理**: 支持ConfigMap统一管理配置
+- **数据持久化**: 支持PVC持久化存储
 
 ## 🔧 环境要求
+
+### Kubernetes部署
+- Kubernetes 1.20+
+- kubectl 命令行工具
+- 外部Ollama服务
 
 ### Docker部署
 - Docker & Docker Compose
@@ -113,6 +143,13 @@ RAG-autogen/
 ├── requirements.txt            # 📦 依赖包列表
 ├── README.md                   # 📖 说明文档
 ├── DOCKER_DEPLOYMENT.md        # 🐳 Docker部署文档
+├── K8S_DEPLOYMENT.md          # ⎈ Kubernetes部署文档
+├── k8s/                       # ⎈ Kubernetes配置目录
+│   ├── namespace.yaml         # 命名空间定义
+│   ├── rag-config.yaml        # ConfigMap配置
+│   ├── rag-web-deployment.yaml # Web服务部署
+│   ├── rag-web-pvc.yaml       # 持久化存储声明
+│   └── milvus-deployment.yaml # Milvus服务部署
 ├── .gitignore                  # 🚫 Git忽略文件
 ├── .dockerignore               # 🐳 Docker忽略文件
 ├── Dockerfile                  # 🐳 Docker镜像构建文件
@@ -155,6 +192,15 @@ RAG-autogen/
 
 ## ⚙️ 配置说明
 
+### Kubernetes环境
+所有配置通过 ConfigMap 统一管理（k8s/rag-config.yaml），包括：
+- Milvus连接配置
+- Ollama服务配置
+- Web服务配置
+- 数据目录配置
+- 日志配置
+
+### Docker环境
 所有服务均通过环境变量（如 MILVUS_HOST, MILVUS_PORT, OLLAMA_HOST）配置，代码已统一读取 config/settings.py。
 
 - Docker Compose 内 rag-web 通过 `milvus-standalone:19530` 访问 Milvus。
@@ -162,6 +208,13 @@ RAG-autogen/
 
 ## 🐛 常见问题
 
+### Kubernetes部署问题
+- Pod无法调度：检查命名空间是否正确（rag-system）
+- ConfigMap未找到：确保ConfigMap在正确的命名空间中
+- PVC绑定失败：检查存储类和PVC配置
+- 服务无法访问：检查NodePort端口（30500）是否被占用
+
+### Docker部署问题
 - 若遇到"连接 localhost:19530 失败"，请检查环境变量和 config/settings.py 配置。
 - 若遇到"PyPDF2 缺失"报错，升级代码后无需再安装 PyPDF2。
 
@@ -187,6 +240,21 @@ RAG-autogen/
 
 ## 🛠️ 故障排除
 
+### Kubernetes部署
+```bash
+# 查看所有资源
+kubectl get all -n rag-system
+
+# 查看Pod日志
+kubectl logs -n rag-system -l app=rag-web
+
+# 查看Pod详情
+kubectl describe pod -n rag-system -l app=rag-web
+
+# 检查配置
+kubectl describe configmap -n rag-system rag-config
+```
+
 ### Docker部署
 ```bash
 # 查看服务状态
@@ -202,16 +270,29 @@ docker-compose restart
 curl http://localhost:11434/api/tags
 ```
 
-### 本地部署
+## 🔄 开发指南
+
+### Kubernetes开发
 ```bash
-# 检查系统状态
-python3 start.py --check
+# 更新配置
+kubectl apply -f k8s/rag-config.yaml
+kubectl rollout restart deployment rag-web -n rag-system
 
 # 查看日志
-tail -f logs/rag_system.log
+kubectl logs -f -n rag-system -l app=rag-web
+
+# 进入容器
+kubectl exec -it -n rag-system $(kubectl get pod -n rag-system -l app=rag-web -o name) -- bash
 ```
 
-## 🔄 开发指南
+### Docker开发
+```bash
+# 构建开发镜像
+docker build -t rag-system:dev .
+
+# 运行开发环境
+docker run -it -v $(pwd):/app rag-system:dev bash
+```
 
 ### 添加新功能
 1. 在相应模块中添加代码
@@ -224,15 +305,6 @@ tail -f logs/rag_system.log
 - **web**: Web界面相关代码
 - **processors**: 文档处理模块
 - **utils**: 通用工具函数
-
-### Docker开发
-```bash
-# 构建开发镜像
-docker build -t rag-system:dev .
-
-# 运行开发环境
-docker run -it -v $(pwd):/app rag-system:dev bash
-```
 
 ## �� 许可证
 
