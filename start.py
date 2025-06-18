@@ -37,6 +37,9 @@ from pathlib import Path
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
+# 导入配置
+from config.settings import OLLAMA_BASE_URL, MILVUS_HOST, MILVUS_PORT
+
 def print_banner():
     """打印启动横幅"""
     print("=" * 60)
@@ -93,7 +96,7 @@ def check_services():
     # 检查Milvus服务
     try:
         from pymilvus import connections
-        connections.connect(host="localhost", port="19530")
+        connections.connect(host=MILVUS_HOST, port=MILVUS_PORT)
         print("  ✅ Milvus服务连接正常")
         connections.disconnect("default")
     except Exception as e:
@@ -104,12 +107,12 @@ def check_services():
     # 检查Ollama服务
     try:
         import ollama
-        client = ollama.Client(host="http://106.52.6.69:11434")
+        client = ollama.Client(host=OLLAMA_BASE_URL)
         models = client.list()
-        print("  ✅ Ollama服务连接正常")
+        print(f"  ✅ Ollama服务连接正常 ({OLLAMA_BASE_URL})")
     except Exception as e:
         print(f"  ❌ Ollama服务连接失败: {e}")
-        print("    请确保Ollama服务正在运行")
+        print(f"    请确保Ollama服务正在运行: {OLLAMA_BASE_URL}")
         return False
     
     return True

@@ -12,22 +12,43 @@ from utils.text_utils import TextUtils
 from utils.vector_store import VectorStore
 from utils.ui_utils import print_section, typewriter_print, print_info, print_warning, print_success, print_error
 
+# 导入配置
+from config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL
+
 # 加载环境变量
 load_dotenv()
-
-# 配置
-OLLAMA_BASE_URL = "http://106.52.6.69:11434"
 
 class FinanceRAGSystem:
     """金融知识RAG问答系统"""
     
     def __init__(self):
         """初始化系统"""
+        print_info(f"正在连接到Ollama服务: {OLLAMA_BASE_URL}")
+        
         # 初始化组件
         self.vector_store = VectorStore()
         self.text_utils = TextUtils()
         self.doc_processor = DocumentProcessor()
-        self.ollama_client = ollama.Client(host=OLLAMA_BASE_URL)
+        
+        # 初始化Ollama客户端，支持重试
+        max_retries = 5
+        retry_delay = 3
+        
+        for attempt in range(max_retries):
+            try:
+                self.ollama_client = ollama.Client(host=OLLAMA_BASE_URL)
+                # 测试连接
+                models = self.ollama_client.list()
+                print_success(f"成功连接到Ollama服务，可用模型: {len(models['models'])} 个")
+                break
+            except Exception as e:
+                print_warning(f"尝试第 {attempt+1} 次连接Ollama失败: {str(e)}")
+                if attempt < max_retries - 1:
+                    print_info(f"等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+                else:
+                    print_error("无法连接到Ollama服务，系统初始化失败")
+                    raise e
         
         print_success("系统初始化完成")
 

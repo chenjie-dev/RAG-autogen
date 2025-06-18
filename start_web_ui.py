@@ -39,6 +39,12 @@ from datetime import datetime
 import threading
 import queue
 
+# 添加src目录到Python路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+# 导入配置
+from config.settings import OLLAMA_BASE_URL, MILVUS_HOST, MILVUS_PORT
+
 def check_dependencies():
     """检查依赖是否安装"""
     # 包名到模块名的映射
@@ -78,7 +84,7 @@ def check_services():
     # 检查Milvus服务
     try:
         from pymilvus import connections
-        connections.connect(host="localhost", port="19530")
+        connections.connect(host=MILVUS_HOST, port=MILVUS_PORT)
         print("✓ Milvus服务连接正常")
         connections.disconnect("default")
     except Exception as e:
@@ -89,13 +95,13 @@ def check_services():
     # 检查Ollama服务
     try:
         import ollama
-        client = ollama.Client(host="http://106.52.6.69:11434")
+        client = ollama.Client(host=OLLAMA_BASE_URL)
         # 尝试列出模型
         models = client.list()
-        print("✓ Ollama服务连接正常")
+        print(f"✓ Ollama服务连接正常 ({OLLAMA_BASE_URL})")
     except Exception as e:
         print(f"✗ Ollama服务连接失败: {e}")
-        print("请确保Ollama服务正在运行")
+        print(f"请确保Ollama服务正在运行: {OLLAMA_BASE_URL}")
         return False
     
     return True
@@ -105,8 +111,8 @@ def start_web_ui():
     print("启动Web UI...")
     
     # 检查web_ui.py是否存在
-    if not os.path.exists('web_ui.py'):
-        print("错误: web_ui.py 文件不存在")
+    if not os.path.exists('src/web/web_ui.py'):
+        print("错误: src/web/web_ui.py 文件不存在")
         return False
     
     # 检查templates目录是否存在
@@ -126,7 +132,7 @@ def start_web_ui():
     
     try:
         # 启动Flask应用
-        from web_ui import app
+        from src.web.web_ui import app
         app.run(debug=False, host='0.0.0.0', port=5000)
     except KeyboardInterrupt:
         print("\n服务已停止")

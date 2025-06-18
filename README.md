@@ -4,17 +4,43 @@
 
 ## 🚀 快速启动
 
-### 1. 检查系统状态
+### 方式一：Docker部署（推荐）
+
+#### 完整部署（包含Milvus，连接外部Ollama）
+```bash
+# 1. 确保外部Ollama服务正在运行
+ollama serve
+
+# 2. 使用快速启动脚本
+chmod +x start-docker.sh
+./start-docker.sh
+
+# 或手动启动
+docker-compose up -d
+```
+
+#### 仅部署RAG应用（连接外部服务）
+```bash
+# 确保外部服务正在运行：
+# - Milvus: localhost:19530
+# - Ollama: localhost:11434
+
+docker-compose -f docker-compose.simple.yml up -d
+```
+
+### 方式二：本地部署
+
+#### 1. 检查系统状态
 ```bash
 python3 start.py status
 ```
 
-### 2. 启动命令行模式
+#### 2. 启动命令行模式
 ```bash
 python3 start.py cli
 ```
 
-### 3. 启动Web界面
+#### 3. 启动Web界面
 ```bash
 python3 start.py web
 ```
@@ -26,20 +52,44 @@ python3 start.py web
 - **向量数据库**: 使用Milvus存储文档向量
 - **双界面**: 命令行和Web界面
 - **流式输出**: 支持打字机效果的实时回答
+- **容器化部署**: 支持Docker一键部署
 
 ## 🔧 环境要求
 
+### Docker部署
+- Docker & Docker Compose
+- 外部Ollama服务（可选，用于大模型）
+
+### 本地部署
 - Python 3.8+
 - Milvus服务
 - Ollama服务
 
-## 📦 依赖安装
+## 🛠 依赖安装
 
+### Docker部署
+无需手动安装依赖，Docker会自动处理。
+
+### 本地部署
 ```bash
 pip3 install -r requirements.txt
 ```
 
+> 注意：不再需要 PyPDF2，仅需 pdfplumber。
+
 ## 🎯 使用示例
+
+### Docker部署
+```bash
+# 启动服务
+docker-compose up -d
+
+# 访问Web界面
+# http://localhost:5000
+
+# 查看日志
+docker-compose logs -f rag-web
+```
 
 ### 命令行模式
 ```bash
@@ -59,9 +109,17 @@ python3 start.py web
 ```
 RAG-autogen/
 ├── start.py                    # 🚀 统一启动脚本
+├── start_web_ui.py            # 🌐 Web UI独立启动脚本
 ├── requirements.txt            # 📦 依赖包列表
 ├── README.md                   # 📖 说明文档
+├── DOCKER_DEPLOYMENT.md        # 🐳 Docker部署文档
 ├── .gitignore                  # 🚫 Git忽略文件
+├── .dockerignore               # 🐳 Docker忽略文件
+├── Dockerfile                  # 🐳 Docker镜像构建文件
+├── docker-compose.yml          # 🐳 Docker Compose配置
+├── docker-compose.simple.yml   # 🐳 简化版Docker配置
+├── docker-entrypoint.sh        # 🐳 Docker入口脚本
+├── start-docker.sh             # 🐳 Docker快速启动脚本
 ├── config/
 │   └── settings.py             # ⚙️ 系统配置
 ├── src/                        # 📁 源代码目录
@@ -89,51 +147,69 @@ RAG-autogen/
 ├── data/                       # 💾 数据目录
 │   ├── uploads/               # 上传文件
 │   └── exports/               # 导出文件
+├── uploads/                    # 📤 上传目录
 ├── logs/                       # 📝 日志目录
+├── volumes/                    # 💾 Docker卷目录
 └── tests/                      # 🧪 测试目录
 ```
 
 ## ⚙️ 配置说明
 
-### 环境变量配置
-创建 `.env` 文件：
-```bash
-# Milvus配置
-MILVUS_HOST=localhost
-MILVUS_PORT=19530
-COLLECTION_NAME=finance_knowledge
+所有服务均通过环境变量（如 MILVUS_HOST, MILVUS_PORT, OLLAMA_HOST）配置，代码已统一读取 config/settings.py。
 
-# Ollama配置
-OLLAMA_BASE_URL=http://106.52.6.69:11434
-OLLAMA_MODEL=deepseek-r1:14b
+- Docker Compose 内 rag-web 通过 `milvus-standalone:19530` 访问 Milvus。
+- 外部服务通过 `localhost` 或 `host.docker.internal`。
 
-# Web UI配置
-WEB_HOST=0.0.0.0
-WEB_PORT=5000
-WEB_DEBUG=False
-```
+## 🐛 常见问题
 
-### 系统配置
-主要配置在 `config/settings.py` 中：
-- 向量数据库配置
-- 文件处理参数
-- 重试机制设置
+- 若遇到"连接 localhost:19530 失败"，请检查环境变量和 config/settings.py 配置。
+- 若遇到"PyPDF2 缺失"报错，升级代码后无需再安装 PyPDF2。
+
+## 🐳 Docker部署详解
+
+### 服务架构
+- **RAG Web应用**: Flask Web服务
+- **Milvus**: 向量数据库（容器内）
+- **外部Ollama**: 大语言模型服务（宿主机）
+
+### 端口映射
+- `5000`: Web界面
+- `19530`: Milvus API
+- `9091`: Milvus管理端口
+
+### 数据持久化
+- `./uploads`: 上传文件
+- `./data`: 系统数据
+- `./logs`: 日志文件
+- `./volumes`: Docker卷数据
+
+详细部署说明请参考 [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)
 
 ## 🛠️ 故障排除
 
-### 检查系统状态
+### Docker部署
 ```bash
-python3 start.py --check
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f rag-web
+
+# 重启服务
+docker-compose restart
+
+# 检查外部Ollama服务
+curl http://localhost:11434/api/tags
 ```
 
-### 常见问题
-1. **Milvus连接失败**: 确保Milvus服务正在运行
-2. **Ollama连接失败**: 检查Ollama服务地址和端口
-3. **依赖缺失**: 运行 `pip3 install -r requirements.txt`
+### 本地部署
+```bash
+# 检查系统状态
+python3 start.py --check
 
-### 日志查看
-- 系统日志: `logs/` 目录
-- Web UI日志: 控制台输出
+# 查看日志
+tail -f logs/rag_system.log
+```
 
 ## 🔄 开发指南
 
@@ -148,6 +224,15 @@ python3 start.py --check
 - **web**: Web界面相关代码
 - **processors**: 文档处理模块
 - **utils**: 通用工具函数
+
+### Docker开发
+```bash
+# 构建开发镜像
+docker build -t rag-system:dev .
+
+# 运行开发环境
+docker run -it -v $(pwd):/app rag-system:dev bash
+```
 
 ## �� 许可证
 

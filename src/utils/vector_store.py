@@ -1,11 +1,12 @@
 from typing import List, Dict
 from pymilvus import connections, Collection, CollectionSchema, FieldSchema, DataType, utility
 from datetime import datetime
+import os
 
 class VectorStore:
     """向量数据库管理类"""
     
-    def __init__(self, host: str = "localhost", port: str = "19530", collection_name: str = "finance_knowledge"):
+    def __init__(self, host: str = None, port: str = None, collection_name: str = None):
         """初始化向量数据库
         
         Args:
@@ -13,25 +14,40 @@ class VectorStore:
             port: Milvus端口
             collection_name: 集合名称
         """
-        self.host = host
-        self.port = port
-        self.collection_name = collection_name
+        # 支持环境变量配置
+        self.host = host or os.getenv("MILVUS_HOST", "localhost")
+        self.port = port or os.getenv("MILVUS_PORT", "19530")
+        self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "finance_knowledge")
         self.collection = None
         
-        # 连接Milvus
-        self._connect()
+        print(f"正在连接到Milvus: {self.host}:{self.port}")
+        
+        # 连接Milvus，支持重试
+        self._connect_with_retry()
         
         # 确保集合存在
         self._ensure_collection()
     
+    def _connect_with_retry(self, max_retries: int = 5, retry_delay: int = 3):
+        """带重试的Milvus连接"""
+        for attempt in range(max_retries):
+            try:
+                connections.connect(host=self.host, port=self.port)
+                print(f"✓ 成功连接到Milvus服务: {self.host}:{self.port}")
+                return
+            except Exception as e:
+                print(f"✗ 尝试第 {attempt+1} 次连接Milvus失败: {str(e)}")
+                if attempt < max_retries - 1:
+                    print(f"等待 {retry_delay} 秒后重试...")
+                    import time
+                    time.sleep(retry_delay)
+                else:
+                    print(f"✗ 无法连接到Milvus服务，请检查服务是否正在运行")
+                    raise e
+    
     def _connect(self):
-        """连接到Milvus数据库"""
-        try:
-            connections.connect(host=self.host, port=self.port)
-            print("已连接 Milvus 服务。")
-        except Exception as e:
-            print(f"连接Milvus失败: {str(e)}")
-            raise
+        """连接到Milvus数据库（保留原方法以兼容）"""
+        self._connect_with_retry()
     
     def _ensure_collection(self):
         """确保集合存在并具有正确的模式"""

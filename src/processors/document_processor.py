@@ -1,6 +1,5 @@
 import os
 from typing import List
-import PyPDF2
 import docx
 import markdown
 from bs4 import BeautifulSoup

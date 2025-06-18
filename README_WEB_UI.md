@@ -12,8 +12,8 @@
 - **流式回答**: 实时显示回答内容，提供更好的用户体验
 
 ### 🌐 访问方式
-- 启动Web服务: `python3 start.py web`
-- 访问地址: http://localhost:5000
+- **Docker部署**: `docker-compose up -d` 然后访问 http://localhost:5000
+- **本地部署**: `python3 start.py web` 然后访问 http://localhost:5000
 - 支持所有现代浏览器
 
 ### 📱 界面特性
@@ -44,17 +44,42 @@
 
 ## 安装和运行
 
-### 1. 环境要求
+### 🐳 方式一：Docker部署（推荐）
+
+#### 完整部署
+```bash
+# 1. 确保外部Ollama服务正在运行
+ollama serve
+
+# 2. 启动服务
+docker-compose up -d
+
+# 3. 访问界面
+# http://localhost:5000
+```
+
+#### 仅部署Web应用
+```bash
+# 确保外部服务正在运行：
+# - Milvus: localhost:19530
+# - Ollama: localhost:11434
+
+docker-compose -f docker-compose.simple.yml up -d
+```
+
+### 💻 方式二：本地部署
+
+#### 1. 环境要求
 - Python 3.8+
 - Milvus服务运行中
 - Ollama服务运行中
 
-### 2. 安装依赖
+#### 2. 安装依赖
 ```bash
 pip3 install flask pymilvus sentence_transformers ollama pdfplumber python-docx markdown beautifulsoup4 python-pptx
 ```
 
-### 3. 启动Web UI
+#### 3. 启动Web UI
 ```bash
 python3 start_web_ui.py
 ```
@@ -64,7 +89,7 @@ python3 start_web_ui.py
 python3 web_ui.py
 ```
 
-### 4. 访问界面
+#### 4. 访问界面
 打开浏览器访问: http://localhost:5000
 
 ## 使用说明
@@ -94,16 +119,23 @@ python3 web_ui.py
 
 ```
 RAG-autogen/
-├── web_ui.py              # Web UI主程序
-├── start_web_ui.py        # 启动脚本
+├── src/web/web_ui.py          # Web UI主程序
+├── start_web_ui.py            # 启动脚本
 ├── templates/
-│   └── index.html         # 主页模板
-├── uploads/               # 文件上传目录
-├── document_processor.py  # 文档处理模块
-├── text_utils.py          # 文本处理工具
-├── vector_store.py        # 向量数据库管理
-├── ui_utils.py            # UI工具函数
-└── rag_finance_qa.py      # RAG系统核心
+│   └── index.html             # 主页模板
+├── static/                    # 静态资源
+│   ├── css/
+│   ├── js/
+│   └── img/
+├── uploads/                   # 文件上传目录
+├── src/processors/
+│   └── document_processor.py  # 文档处理模块
+├── src/utils/
+│   ├── text_utils.py          # 文本处理工具
+│   ├── vector_store.py        # 向量数据库管理
+│   └── ui_utils.py            # UI工具函数
+└── src/core/
+    └── rag_finance_qa.py      # RAG系统核心
 ```
 
 ## API接口
@@ -116,6 +148,10 @@ RAG-autogen/
 - **POST** `/ask`
 - 发送问题并获取答案
 
+### 流式问答接口
+- **POST** `/ask_stream`
+- 流式返回答案，支持打字机效果
+
 ### 知识管理
 - **POST** `/knowledge`
 - 添加知识内容
@@ -126,10 +162,28 @@ RAG-autogen/
 - **GET** `/stats`
 - 获取系统统计信息
 
+### 清空知识库
+- **POST** `/clear`
+- 清空所有知识库内容
+
 ## 配置说明
 
-### 服务配置
-在 `web_ui.py` 中可以修改以下配置：
+### Docker环境变量
+```bash
+# Milvus配置
+MILVUS_HOST=milvus-standalone  # Docker内部地址
+MILVUS_PORT=19530
+
+# Ollama配置（外部服务）
+OLLAMA_HOST=http://host.docker.internal:11434
+OLLAMA_MODEL=deepseek-r1:14b
+
+# Web UI配置
+FLASK_ENV=production
+```
+
+### 本地服务配置
+在 `src/web/web_ui.py` 中可以修改以下配置：
 
 ```python
 # Ollama服务地址
@@ -150,7 +204,34 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx', 'md', 'pptx', 'txt'}
 
 ## 故障排除
 
-### 常见问题
+### Docker部署问题
+
+1. **容器启动失败**
+   ```bash
+   # 查看详细日志
+   docker-compose logs rag-web
+   
+   # 检查服务状态
+   docker-compose ps
+   ```
+
+2. **外部服务连接失败**
+   ```bash
+   # 检查Ollama服务
+   curl http://localhost:11434/api/tags
+   
+   # 检查Milvus服务
+   curl http://localhost:9091/healthz
+   ```
+
+3. **端口冲突**
+   ```bash
+   # 检查端口占用
+   lsof -i :5000
+   lsof -i :19530
+   ```
+
+### 本地部署问题
 
 1. **Milvus连接失败**
    - 确保Milvus服务正在运行
@@ -169,15 +250,13 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx', 'md', 'pptx', 'txt'}
    - 检查浏览器控制台错误信息
 
 ### 日志查看
-Web UI会在控制台输出详细的日志信息，包括：
-- 系统初始化状态
-- 文件处理进度
-- 错误信息
+- **Docker部署**: `docker-compose logs -f rag-web`
+- **本地部署**: Web UI会在控制台输出详细的日志信息
 
 ## 开发说明
 
 ### 添加新功能
-1. 在 `web_ui.py` 中添加新的路由
+1. 在 `src/web/web_ui.py` 中添加新的路由
 2. 在 `templates/index.html` 中添加对应的UI元素
 3. 在JavaScript中添加相应的交互逻辑
 
@@ -185,10 +264,29 @@ Web UI会在控制台输出详细的日志信息，包括：
 修改 `templates/index.html` 中的CSS样式来自定义界面外观。
 
 ### 扩展文件格式支持
-1. 在 `document_processor.py` 中添加新的处理方法
-2. 在 `web_ui.py` 中更新 `ALLOWED_EXTENSIONS`
+1. 在 `src/processors/document_processor.py` 中添加新的处理方法
+2. 在 `src/web/web_ui.py` 中更新 `ALLOWED_EXTENSIONS`
 3. 在HTML模板中更新支持格式说明
+
+### Docker开发
+```bash
+# 构建开发镜像
+docker build -t rag-web:dev .
+
+# 运行开发环境
+docker run -it -v $(pwd):/app -p 5000:5000 rag-web:dev bash
+```
 
 ## 许可证
 
-本项目采用MIT许可证。 
+本项目采用MIT许可证。
+
+## 依赖说明
+
+- requirements.txt 已包含所有依赖，无需手动安装 PyPDF2。
+- 文档处理仅需 pdfplumber。
+
+## 启动说明
+
+- Web UI 启动脚本 start_web_ui.py 已修正，检查 src/web/web_ui.py 路径，导入 src.web.web_ui。
+- 所有 Milvus/Ollama 配置均通过 config/settings.py 统一读取。 

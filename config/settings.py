@@ -10,12 +10,17 @@ load_dotenv()
 
 # Milvus配置
 MILVUS_HOST = os.getenv("MILVUS_HOST", "localhost")
-MILVUS_PORT = os.getenv("MILVUS_PORT", "19530")
+MILVUS_PORT = int(os.getenv("MILVUS_PORT", "19530"))
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "finance_knowledge")
 
 # Ollama配置
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://106.52.6.69:11434")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://106.52.6.69:11434")  # Docker环境变量
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:14b")
+
+# 如果设置了OLLAMA_HOST，优先使用它
+if OLLAMA_HOST and OLLAMA_HOST != "http://106.52.6.69:11434":
+    OLLAMA_BASE_URL = OLLAMA_HOST
 
 # 向量数据库配置
 EMBEDDING_DIM = 384  # all-MiniLM-L6-v2的嵌入维度
@@ -34,4 +39,13 @@ SIMILARITY_THRESHOLD = 0.8  # 相似度阈值
 
 # 重试配置
 MAX_RETRIES = 3
-RETRY_DELAY = 2 
+RETRY_DELAY = 2
+
+# 日志配置
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_FILE = os.getenv("LOG_FILE", "logs/rag_system.log")
+
+# 数据目录配置
+DATA_DIR = os.getenv("DATA_DIR", "data")
+UPLOADS_DIR = os.getenv("UPLOADS_DIR", "uploads")
+EXPORTS_DIR = os.getenv("EXPORTS_DIR", "data/exports") 
