@@ -12,15 +12,16 @@ from flask import Response
 # 导入我们的RAG系统
 from core.rag_finance_qa import FinanceRAGSystem
 from utils.ui_utils import print_info, print_warning, print_error, print_success
+from utils.logger import logger
 
 # 尝试导入AutoGen系统
 try:
     from core.autogen_rag_system import AutoGenRAGSystem
     AUTOGEN_AVAILABLE = True
-    print("AutoGen智能体系统可用")
+    logger.info("AutoGen智能体系统可用")
 except ImportError as e:
     AUTOGEN_AVAILABLE = False
-    print(f"AutoGen智能体系统不可用: {str(e)}")
+    logger.info(f"AutoGen智能体系统不可用: {str(e)}")
 
 # 获取项目根目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -48,8 +49,18 @@ ALLOWED_EXTENSIONS = {'pdf', 'docx', 'md', 'pptx', 'txt'}
 
 def allowed_file(filename):
     """检查文件扩展名是否允许"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    if not filename or '.' not in filename:
+        logger.info(f"文件名无效或没有扩展名: {filename}")
+        return False
+    
+    extension = filename.rsplit('.', 1)[1].lower()
+    logger.info(f"检查文件扩展名: {extension}")
+    logger.info(f"允许的扩展名: {ALLOWED_EXTENSIONS}")
+    
+    is_allowed = extension in ALLOWED_EXTENSIONS
+    logger.info(f"文件 {filename} 是否允许: {is_allowed}")
+    
+    return is_allowed
 
 def initialize_systems():
     """初始化RAG系统"""
@@ -58,43 +69,57 @@ def initialize_systems():
     # 初始化传统RAG系统
     try:
         rag_system = FinanceRAGSystem()
-        print("传统RAG系统初始化成功")
+        logger.info("传统RAG系统初始化成功")
     except Exception as e:
-        print(f"传统RAG系统初始化失败: {str(e)}")
+        logger.info(f"传统RAG系统初始化失败: {str(e)}")
     
     # 初始化AutoGen智能体系统
     if AUTOGEN_AVAILABLE:
         try:
             autogen_system = AutoGenRAGSystem()
-            print("AutoGen智能体系统初始化成功")
+            logger.info("AutoGen智能体系统初始化成功")
         except Exception as e:
-            print(f"AutoGen智能体系统初始化失败: {str(e)}")
+            logger.info(f"AutoGen智能体系统初始化失败: {str(e)}")
 
 def process_file_background(file_path, filename):
     """后台处理文件"""
     global processing_status, rag_system, autogen_system
     try:
+        logger.info(f"开始后台处理文件: {filename}")
+        logger.info(f"文件路径: {file_path}")
+        
         if rag_system is None:
+            logger.info("RAG系统未初始化")
             processing_status = {"status": "error", "message": "RAG系统未初始化", "progress": 0}
             return
+        
         processing_status = {"status": "processing", "message": f"正在处理文件: {filename}", "progress": 10}
         
         # 添加文档到传统RAG系统
+        logger.info(f"开始添加文档到RAG系统: {file_path}")
         rag_system.add_document(file_path)
+        logger.info("文档已添加到RAG系统")
         
         # 如果AutoGen系统可用，也添加到AutoGen系统
         if autogen_system is not None:
+            logger.info("开始添加文档到AutoGen系统")
             autogen_system.add_document(file_path)
+            logger.info("文档已添加到AutoGen系统")
         
         processing_status = {"status": "completed", "message": f"文件 {filename} 处理完成", "progress": 100}
+        logger.info(f"文件处理完成: {filename}")
         
         # 清理临时文件
         try:
             os.remove(file_path)
-        except:
-            pass
+            logger.info(f"临时文件已清理: {file_path}")
+        except Exception as e:
+            logger.info(f"清理临时文件失败: {str(e)}")
             
     except Exception as e:
+        logger.info(f"处理文件时出错: {str(e)}")
+        import traceback
+        logger.info(f"错误详情: {traceback.format_exc()}")
         processing_status = {"status": "error", "message": f"处理文件时出错: {str(e)}", "progress": 0}
 
 @app.route('/')
@@ -126,13 +151,29 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': '没有选择文件'}), 400
     
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
+    # 记录原始文件名
+    original_filename = file.filename
+    logger.info(f"上传文件: {original_filename}")
+    
+    if file and allowed_file(original_filename):
+        # 安全地处理文件名，但保留扩展名
+        filename = secure_filename(original_filename)
+        
+        # 如果secure_filename移除了扩展名，尝试恢复
+        if '.' not in filename and '.' in original_filename:
+            # 获取原始扩展名
+            original_ext = original_filename.rsplit('.', 1)[1].lower()
+            # 添加扩展名到安全文件名
+            filename = f"{filename}.{original_ext}"
+        
+        logger.info(f"处理后的文件名: {filename}")
         
         # 保存文件到临时目录
         temp_dir = tempfile.mkdtemp()
         file_path = os.path.join(temp_dir, filename)
         file.save(file_path)
+        
+        logger.info(f"文件保存到: {file_path}")
         
         # 重置处理状态
         processing_status = {"status": "processing", "message": f"开始处理文件: {filename}", "progress": 0}
@@ -144,7 +185,8 @@ def upload_file():
         
         return jsonify({'message': '文件上传成功，正在处理中...'})
     
-    return jsonify({'error': '不支持的文件格式'}), 400
+    logger.info(f"不支持的文件格式: {original_filename}")
+    return jsonify({'error': f'不支持的文件格式: {original_filename}'}), 400
 
 @app.route('/status')
 def get_status():
@@ -425,5 +467,5 @@ def clear_knowledge_base():
 initialize_systems()
 
 if __name__ == '__main__':
-    print("Web UI 启动中...")
+    logger.info("Web UI 启动中...")
     app.run(debug=False, host='0.0.0.0', port=5000) 

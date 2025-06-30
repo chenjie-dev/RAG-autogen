@@ -12,6 +12,9 @@ from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.document import InputDocument
 
+# 导入日志模块
+from utils.logger import logger
+
 class DocumentProcessor:
     """文档处理器，支持多种文件格式，使用DocLing处理PDF"""
     
@@ -54,7 +57,7 @@ class DocumentProcessor:
                 try:
                     sorted_cells = sorted(sorted_cells, key=lambda cell: (cell.bbox.t, cell.bbox.l) if hasattr(cell, 'bbox') and cell.bbox else (0, 0))
                 except Exception as sort_error:
-                    print(f"排序文本单元格时出错，保持原顺序: {sort_error}")
+                    logger.info(f"排序文本单元格时出错，保持原顺序: {sort_error}")
                 
                 # 提取文本内容
                 page_texts = []
@@ -73,12 +76,12 @@ class DocumentProcessor:
                     texts.extend(paragraphs)
                     
         except Exception as e:
-            print(f"使用DocLing处理PDF文件时出错: {str(e)}")
+            logger.info(f"使用DocLing处理PDF文件时出错: {str(e)}")
             # 如果DocLing失败，尝试使用备用方法
             try:
                 texts = DocumentProcessor._extract_text_from_pdf_fallback(file_path)
             except Exception as fallback_error:
-                print(f"备用PDF处理方法也失败: {str(fallback_error)}")
+                logger.info(f"备用PDF处理方法也失败: {str(fallback_error)}")
         return texts
 
     @staticmethod
@@ -96,9 +99,9 @@ class DocumentProcessor:
                         paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
                         texts.extend(paragraphs)
         except ImportError:
-            print("pdfplumber未安装，无法使用备用PDF处理方法")
+            logger.info("pdfplumber未安装，无法使用备用PDF处理方法")
         except Exception as e:
-            print(f"备用PDF处理方法出错: {str(e)}")
+            logger.info(f"备用PDF处理方法出错: {str(e)}")
         return texts
 
     @staticmethod
@@ -137,7 +140,7 @@ class DocumentProcessor:
                 results.append(page_data)
                     
         except Exception as e:
-            print(f"使用DocLing提取PDF布局信息时出错: {str(e)}")
+            logger.info(f"使用DocLing提取PDF布局信息时出错: {str(e)}")
         return results
 
     @staticmethod
@@ -150,21 +153,195 @@ class DocumentProcessor:
             text = page_backend.get_text_in_rect(bbox=bbox)
             return text.strip()
         except Exception as e:
-            print(f"从PDF区域提取文本时出错: {str(e)}")
+            logger.info(f"从PDF区域提取文本时出错: {str(e)}")
             return ""
 
     @staticmethod
     def extract_text_from_docx(file_path: str) -> List[str]:
-        """从Word文档中提取文本"""
+        """从Word文档中提取文本，使用DocLing"""
         texts = []
         try:
+            logger.info(f"开始处理Word文档: {os.path.basename(file_path)}")
+            
+            # 使用DocLing的MsWordDocumentBackend
+            from docling.backend.msword_backend import MsWordDocumentBackend
+            from docling.datamodel.document import DoclingDocument, TextItem, SectionHeaderItem
+            
+            # 创建输入文档
+            in_doc = InputDocument(
+                path_or_stream=Path(file_path),
+                format=InputFormat.DOCX,
+                backend=MsWordDocumentBackend,
+            )
+            
+            # 创建后端并转换文档
+            backend = MsWordDocumentBackend(
+                in_doc=in_doc,
+                path_or_stream=Path(file_path),
+            )
+            doc: DoclingDocument = backend.convert()
+            
+            logger.info(f"DocLing文档转换成功，开始提取文本...")
+            
+            # 遍历文档中的所有项目
+            item_count = 0
+            for item, _ in doc.iterate_items():
+                item_count += 1
+                
+                if isinstance(item, TextItem):
+                    # 处理普通文本
+                    if item.text.strip():
+                        texts.append(item.text.strip())
+                elif isinstance(item, SectionHeaderItem):
+                    # 处理标题，添加标题级别信息
+                    header_text = f"[标题{item.level}] {item.text.strip()}"
+                    if header_text:
+                        texts.append(header_text)
+                else:
+                    # 处理其他类型的项目
+                    if hasattr(item, 'text') and item.text.strip():
+                        texts.append(item.text.strip())
+            
+            logger.info(f"使用DocLing处理Word文档，遍历了 {item_count} 个项目，提取了 {len(texts)} 个文本块")
+            
+            # 验证提取结果
+            if not texts:
+                logger.info("警告: DocLing没有提取到任何文本，尝试备用方法")
+                raise Exception("DocLing提取结果为空")
+            
+            # 显示提取的文本示例
+            if texts:
+                logger.info("提取的文本示例:")
+                for i, text in enumerate(texts[:3]):
+                    logger.info(f"  {i+1}: {text[:100]}...")
+            
+        except Exception as e:
+            logger.info(f"使用DocLing处理Word文档时出错: {str(e)}")
+            # 如果DocLing失败，使用备用方法
+            try:
+                logger.info("尝试使用备用方法处理Word文档...")
+                texts = DocumentProcessor._extract_text_from_docx_fallback(file_path)
+                logger.info(f"备用方法成功，提取了 {len(texts)} 个文本块")
+            except Exception as fallback_error:
+                logger.info(f"备用Word文档处理方法也失败: {str(fallback_error)}")
+                texts = []
+        
+        return texts
+
+    @staticmethod
+    def _extract_text_from_docx_fallback(file_path: str) -> List[str]:
+        """Word文档处理的备用方法"""
+        texts = []
+        try:
+            logger.info(f"使用python-docx备用方法处理Word文档...")
             doc = docx.Document(file_path)
+            
+            # 提取段落文本
+            paragraph_count = 0
             for para in doc.paragraphs:
                 if para.text.strip():
                     texts.append(para.text.strip())
+                    paragraph_count += 1
+            
+            logger.info(f"从段落中提取了 {paragraph_count} 个文本块")
+            
+            # 提取表格文本
+            table_count = 0
+            for table in doc.tables:
+                table_texts = []
+                for row in table.rows:
+                    row_texts = []
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            row_texts.append(cell.text.strip())
+                    if row_texts:
+                        table_texts.append(" | ".join(row_texts))
+                if table_texts:
+                    texts.append("表格: " + " | ".join(table_texts))
+                    table_count += 1
+            
+            logger.info(f"从表格中提取了 {table_count} 个文本块")
+            logger.info(f"使用备用方法处理Word文档，总共提取了 {len(texts)} 个文本块")
+            
+            # 显示提取的文本示例
+            if texts:
+                logger.info("备用方法提取的文本示例:")
+                for i, text in enumerate(texts[:3]):
+                    logger.info(f"  {i+1}: {text[:100]}...")
+            
         except Exception as e:
-            print(f"处理Word文档时出错: {str(e)}")
+            logger.info(f"备用Word文档处理方法出错: {str(e)}")
+            import traceback
+            logger.info(f"错误详情: {traceback.format_exc()}")
+        
         return texts
+
+    @staticmethod
+    def extract_text_from_docx_with_structure(file_path: str) -> List[dict]:
+        """从Word文档中提取文本和结构信息，使用DocLing"""
+        results = []
+        try:
+            # 使用DocLing的MsWordDocumentBackend
+            from docling.backend.msword_backend import MsWordDocumentBackend
+            from docling.datamodel.document import DoclingDocument, TextItem, SectionHeaderItem
+            
+            # 创建输入文档
+            in_doc = InputDocument(
+                path_or_stream=Path(file_path),
+                format=InputFormat.DOCX,
+                backend=MsWordDocumentBackend,
+            )
+            
+            # 创建后端并转换文档
+            backend = MsWordDocumentBackend(
+                in_doc=in_doc,
+                path_or_stream=Path(file_path),
+            )
+            doc: DoclingDocument = backend.convert()
+            
+            # 遍历文档中的所有项目
+            for item, _ in doc.iterate_items():
+                item_data = {
+                    'text': '',
+                    'type': 'unknown',
+                    'level': None,
+                    'metadata': {}
+                }
+                
+                if isinstance(item, TextItem):
+                    item_data['text'] = item.text.strip()
+                    item_data['type'] = 'text'
+                    if hasattr(item, 'font_size'):
+                        item_data['metadata']['font_size'] = getattr(item, 'font_size', None)
+                    if hasattr(item, 'font_name'):
+                        item_data['metadata']['font_name'] = getattr(item, 'font_name', None)
+                        
+                elif isinstance(item, SectionHeaderItem):
+                    item_data['text'] = item.text.strip()
+                    item_data['type'] = 'header'
+                    item_data['level'] = item.level
+                    
+                else:
+                    # 处理其他类型的项目
+                    if hasattr(item, 'text'):
+                        item_data['text'] = item.text.strip()
+                    item_data['type'] = type(item).__name__
+                
+                # 只添加有文本内容的项目
+                if item_data['text']:
+                    results.append(item_data)
+            
+            logger.info(f"使用DocLing处理Word文档，提取了 {len(results)} 个结构化文本块")
+            
+        except Exception as e:
+            logger.info(f"使用DocLing处理Word文档结构时出错: {str(e)}")
+            # 如果DocLing失败，返回简单的文本列表
+            try:
+                simple_texts = DocumentProcessor._extract_text_from_docx_fallback(file_path)
+                results = [{'text': text, 'type': 'text', 'level': None, 'metadata': {}} for text in simple_texts]
+            except Exception as fallback_error:
+                logger.info(f"备用Word文档处理方法也失败: {str(fallback_error)}")
+        return results
 
     @staticmethod
     def extract_text_from_markdown(file_path: str) -> List[str]:
@@ -184,7 +361,7 @@ class DocumentProcessor:
                     if text:
                         texts.append(text)
         except Exception as e:
-            print(f"处理Markdown文件时出错: {str(e)}")
+            logger.info(f"处理Markdown文件时出错: {str(e)}")
         return texts
 
     @staticmethod
@@ -203,7 +380,7 @@ class DocumentProcessor:
                 if slide_texts:
                     texts.append(" | ".join(slide_texts))  # 将同一页的文本合并
         except Exception as e:
-            print(f"处理PowerPoint文件时出错: {str(e)}")
+            logger.info(f"处理PowerPoint文件时出错: {str(e)}")
         return texts
 
     @staticmethod
@@ -217,7 +394,7 @@ class DocumentProcessor:
                 paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
                 texts.extend(paragraphs)
         except Exception as e:
-            print(f"处理文本文件时出错: {str(e)}")
+            logger.info(f"处理文本文件时出错: {str(e)}")
         return texts
 
     @staticmethod

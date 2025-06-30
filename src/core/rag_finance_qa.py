@@ -11,6 +11,7 @@ from processors.document_processor import DocumentProcessor
 from utils.text_utils import TextUtils
 from utils.vector_store import VectorStore
 from utils.ui_utils import print_section, typewriter_print, print_info, print_warning, print_success, print_error
+from utils.logger import logger
 
 # 导入配置
 from config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL
@@ -23,7 +24,7 @@ class FinanceRAGSystem:
     
     def __init__(self):
         """初始化系统"""
-        print_info(f"正在连接到Ollama服务: {OLLAMA_BASE_URL}")
+        logger.info(f"正在连接到Ollama服务: {OLLAMA_BASE_URL}")
         
         # 初始化组件
         self.vector_store = VectorStore()
@@ -39,78 +40,102 @@ class FinanceRAGSystem:
                 self.ollama_client = ollama.Client(host=OLLAMA_BASE_URL)
                 # 测试连接
                 models = self.ollama_client.list()
-                print_success(f"成功连接到Ollama服务，可用模型: {len(models['models'])} 个")
+                logger.info(f"成功连接到Ollama服务，可用模型: {len(models['models'])} 个")
                 break
             except Exception as e:
-                print_warning(f"尝试第 {attempt+1} 次连接Ollama失败: {str(e)}")
+                logger.info(f"尝试第 {attempt+1} 次连接Ollama失败: {str(e)}")
                 if attempt < max_retries - 1:
-                    print_info(f"等待 {retry_delay} 秒后重试...")
+                    logger.info(f"等待 {retry_delay} 秒后重试...")
                     time.sleep(retry_delay)
                 else:
-                    print_error("无法连接到Ollama服务，系统初始化失败")
+                    logger.info("无法连接到Ollama服务，系统初始化失败")
                     raise e
         
-        print_success("系统初始化完成")
+        logger.info("系统初始化完成")
 
     def add_document(self, file_path: str):
         """添加文档到知识库"""
         try:
-            print_info(f"开始处理文档: {file_path}")
+            logger.info(f"=== 开始处理文档: {file_path} ===")
             
             if not os.path.exists(file_path):
-                print_error(f"文件不存在 - {file_path}")
+                logger.info(f"文件不存在 - {file_path}")
                 return
 
             # 获取文件扩展名
             file_ext = os.path.splitext(file_path)[1].lower()
-            print_info(f"文件类型: {file_ext}")
+            logger.info(f"文件类型: {file_ext}")
 
             # 提取文本
+            logger.info("开始提取文档文本...")
             text_blocks = self.doc_processor.process_file(file_path)
+            logger.info(f"文档处理器返回了 {len(text_blocks)} 个文本块")
+            
             if not text_blocks:
-                print_warning("提取的文本为空")
+                logger.info("提取的文本为空，无法添加到知识库")
                 return
 
             # 将文本列表合并为单个字符串，然后重新分割
             full_text = "\n\n".join(text_blocks)
-            print_info(f"成功提取文本，长度: {len(full_text)} 字符")
+            logger.info(f"合并后的文本长度: {len(full_text)} 字符")
 
             # 将文本分割成较小的块
+            logger.info("开始分割文本...")
             text_blocks = self.text_utils.split_text(full_text)
-            print_info(f"文本已分割成 {len(text_blocks)} 个块")
+            logger.info(f"文本分割完成，共 {len(text_blocks)} 个块")
 
             # 检查每个文本块是否已存在
+            logger.info("开始检查重复内容...")
             new_texts = []
-            for block in text_blocks:
+            duplicate_count = 0
+            
+            for i, block in enumerate(text_blocks):
                 if not block.strip():
                     continue
                 
+                logger.info(f"检查第 {i+1}/{len(text_blocks)} 个文本块...")
+                
                 # 检查相似性
-                query_embedding = self.text_utils.generate_embeddings([block])[0]
-                similar_texts = self.vector_store.search(query_embedding, top_k=1)
-                
-                if similar_texts and self.text_utils.calculate_similarity(block, similar_texts[0]["text"]) > 0.8:
-                    print_warning(f"跳过相似内容: {block[:100]}...")
-                    continue
-                
-                new_texts.append({
-                    "text": block,
-                    "source": os.path.basename(file_path),
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                })
+                try:
+                    query_embedding = self.text_utils.generate_embeddings([block])[0]
+                    similar_texts = self.vector_store.search(query_embedding, top_k=1)
+                    
+                    if similar_texts and self.text_utils.calculate_similarity(block, similar_texts[0]["text"]) > 0.8:
+                        logger.info(f"跳过相似内容: {block[:100]}...")
+                        duplicate_count += 1
+                        continue
+                    
+                    new_texts.append({
+                        "text": block,
+                        "source": os.path.basename(file_path),
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                    logger.info(f"添加新文本块: {block[:100]}...")
+                    
+                except Exception as e:
+                    logger.info(f"检查文本块时出错: {str(e)}")
+                    # 如果检查失败，直接添加
+                    new_texts.append({
+                        "text": block,
+                        "source": os.path.basename(file_path),
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+
+            logger.info(f"重复检查完成: 跳过 {duplicate_count} 个重复内容，新增 {len(new_texts)} 个文本块")
 
             if not new_texts:
-                print_info("所有内容都已存在于知识库中")
+                logger.info("所有内容都已存在于知识库中")
                 return
 
-            print_info(f"准备添加 {len(new_texts)} 个新文本块到数据库")
+            logger.info(f"准备添加 {len(new_texts)} 个新文本块到数据库")
 
             # 为新的文本生成嵌入向量
             try:
+                logger.info("开始生成嵌入向量...")
                 embeddings = self.text_utils.generate_embeddings([item["text"] for item in new_texts])
-                print_success(f"成功生成 {len(embeddings)} 个嵌入向量")
+                logger.info(f"成功生成 {len(embeddings)} 个嵌入向量")
             except Exception as e:
-                print_error(f"生成嵌入向量时出错: {str(e)}")
+                logger.info(f"生成嵌入向量时出错: {str(e)}")
                 return
 
             # 准备插入数据
@@ -121,14 +146,26 @@ class FinanceRAGSystem:
 
             # 插入数据到向量数据库
             try:
+                logger.info("开始插入数据到向量数据库...")
                 self.vector_store.insert_data(texts, embedding_list, sources, timestamps)
-                print_success(f"成功添加 {len(new_texts)} 条新知识到数据库")
+                logger.info(f"成功添加 {len(new_texts)} 条新知识到数据库")
+                
+                # 获取更新后的统计信息
+                collection_stats = self.vector_store.get_collection_stats()
+                logger.info(f"知识库统计: {collection_stats}")
+                
             except Exception as e:
-                print_error(f"插入数据到数据库时出错: {str(e)}")
+                logger.info(f"插入数据到数据库时出错: {str(e)}")
+                import traceback
+                logger.info(f"错误详情: {traceback.format_exc()}")
                 return
 
+            logger.info(f"=== 文档处理完成: {file_path} ===")
+
         except Exception as e:
-            print_error(f"处理文档时发生错误: {str(e)}")
+            logger.info(f"处理文档时发生错误: {str(e)}")
+            import traceback
+            logger.info(f"错误详情: {traceback.format_exc()}")
 
     def add_knowledge(self, texts: List[str], source: str = "manual_input"):
         """添加知识到向量数据库"""

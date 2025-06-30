@@ -8,6 +8,7 @@
 - **双系统架构**: 传统RAG + AutoGen智能体协作
 - **多格式文档支持**: PDF, DOCX, MD, PPTX, TXT
 - **高级PDF处理**: 基于DocLing的精确布局识别和文本提取
+- **高级Word处理**: 基于DocLing的完整文档结构解析
 - **智能问答**: 基于知识库的精准回答
 - **Web界面**: 现代化的用户界面，支持流式回答
 - **打字机效果**: 优化的聊天体验，实时显示思考过程
@@ -23,7 +24,7 @@
 - **前端**: HTML5, CSS3, JavaScript, Bootstrap 5
 - **AI模型**: DeepSeek R1 14B (通过Ollama)
 - **向量数据库**: Milvus
-- **文档处理**: DocLing (PDF), python-docx, markdown
+- **文档处理**: DocLing (PDF/Word), python-docx, markdown
 
 ## 📁 项目结构
 
@@ -56,8 +57,10 @@ RAG-autogen/
 ├── logs/                         # 日志目录
 ├── volumes/                      # Docker卷
 ├── k8s/                         # Kubernetes配置
+├── tests/                        # 测试目录
+│   ├── test_word_processing.py  # Word文档处理测试
+│   └── test_backend_pdfium.py   # PDF处理测试
 ├── start.py                     # 统一启动脚本
-├── test_docling_pdf.py          # DocLing PDF处理测试
 ├── requirements.txt             # Python依赖
 ├── Dockerfile                   # Docker配置
 ├── docker-compose.yml           # Docker Compose配置
@@ -83,10 +86,13 @@ cd RAG-autogen
 pip install -r requirements.txt
 ```
 
-### 3. 测试DocLing PDF处理（可选）
+### 3. 测试文档处理功能（可选）
 ```bash
-# 测试DocLing安装和PDF处理功能
-python test_docling_pdf.py
+# 测试PDF处理功能
+python tests/test_backend_pdfium.py
+
+# 测试Word文档处理功能
+python tests/test_word_processing.py
 ```
 
 ### 4. 启动服务
@@ -128,6 +134,7 @@ python start.py status
    - 支持拖拽上传
    - 支持多种格式: PDF, DOCX, MD, PPTX, TXT
    - **PDF处理**: 使用DocLing进行精确布局识别
+   - **Word处理**: 使用DocLing进行完整结构解析
    - 实时显示上传进度
 
 3. **智能问答**
@@ -135,20 +142,29 @@ python start.py status
    - 实时显示思考过程和答案生成
    - 支持流式回答，打字机效果
 
-### PDF处理特性
+### 文档处理特性
 
-#### DocLing优势
+#### PDF处理 (DocLing PyPDFium2后端)
 - **精确布局识别**: 保持文档原始布局结构
 - **文本单元格提取**: 按位置和字体信息组织文本
 - **区域文本提取**: 支持指定区域文本提取
 - **字体信息保留**: 保留字体大小、字体名称等元数据
 - **多页处理**: 支持复杂多页文档
+- **错误处理**: 自动回退到备用PDF处理方法
+
+#### Word文档处理 (DocLing MsWord后端)
+- **标题级别识别**: 自动识别文档标题层级
+- **文本框提取**: 支持复杂文本框内容提取
+- **表格处理**: 智能提取表格结构和内容
+- **图片锚点处理**: 正确处理图片后的文本内容
+- **字体信息保留**: 保留字体大小、字体名称等格式信息
+- **结构化输出**: 提供详细的文档结构信息
 
 #### 处理流程
-1. **文档加载**: 使用PyPDFium2后端加载PDF
-2. **页面分析**: 逐页分析文本单元格布局
-3. **文本排序**: 按位置（从上到下，从左到右）排序
-4. **段落分割**: 智能识别自然段落边界
+1. **文档加载**: 使用DocLing后端加载文档
+2. **结构分析**: 分析文档结构和布局
+3. **内容提取**: 按类型提取文本内容
+4. **信息组织**: 保留原始结构和元数据
 5. **备用处理**: 如果DocLing失败，自动切换到备用方法
 
 ### AutoGen模式说明
@@ -170,6 +186,7 @@ python start.py cli
 
 # 上传文档
 upload /path/to/document.pdf
+upload /path/to/document.docx
 
 # 提问
 ask "什么是人工智能？"
@@ -199,6 +216,7 @@ SUPPORTED_FORMATS = ['.pdf', '.docx', '.md', '.pptx', '.txt']
 # DocLing配置
 DOCLING_ENABLE_LAYOUT_EXTRACTION = True  # 启用布局信息提取
 DOCLING_FALLBACK_TO_PDFPLUMBER = True    # 启用备用PDF处理
+DOCLING_WORD_STRUCTURE_EXTRACTION = True # 启用Word结构提取
 ```
 
 ### 环境变量
@@ -248,6 +266,15 @@ kubectl apply -f k8s/rag-web-deployment.yaml
 python test_ollama_connection.py
 ```
 
+### 文档处理测试
+```bash
+# 测试PDF处理功能
+python tests/test_backend_pdfium.py
+
+# 测试Word文档处理功能
+python tests/test_word_processing.py
+```
+
 ### 功能测试
 1. **文档上传测试**: 上传不同格式文档
 2. **问答测试**: 测试不同类型问题
@@ -281,7 +308,16 @@ python test_ollama_connection.py
    ollama pull deepseek-r1:14b
    ```
 
-4. **内存不足**
+4. **文档处理失败**
+   ```bash
+   # 检查DocLing安装
+   python -c "import docling; print('DocLing installed')"
+   
+   # 测试文档处理
+   python tests/test_word_processing.py
+   ```
+
+5. **内存不足**
    - 减少并发请求数
    - 使用更小的模型
    - 增加系统内存
@@ -302,6 +338,7 @@ docker logs rag-autogen-container
 2. **流式输出**: 实时显示回答过程
 3. **打字机效果**: 提升用户体验
 4. **智能体状态监控**: 可视化处理过程
+5. **DocLing文档处理**: 高效的文档解析和文本提取
 
 ### 进一步优化建议
 1. **缓存机制**: 缓存常见问题答案
@@ -326,6 +363,7 @@ docker logs rag-autogen-container
 - [Milvus](https://milvus.io/) - 向量数据库
 - [Ollama](https://ollama.ai/) - 本地LLM服务
 - [AutoGen](https://microsoft.github.io/autogen/) - 智能体框架
+- [DocLing](https://github.com/DS4SD/docling) - 文档处理框架
 - [Flask](https://flask.palletsprojects.com/) - Web框架
 - [Bootstrap](https://getbootstrap.com/) - UI框架
 
@@ -337,6 +375,8 @@ docker logs rag-autogen-container
 
 ---
 
-**版本**: 2.0.0  
-**更新日期**: 2024年12月  
-**状态**: 生产就绪 ✅ 
+**更新内容**: 
+- ✅ 增强PDF处理：修复文本单元格排序问题，提升提取准确性
+- ✅ 新增Word处理：集成DocLing MsWord后端，支持完整文档结构解析
+- ✅ 改进错误处理：完善的备用方案和异常处理机制
+- ✅ 新增测试套件：PDF和Word文档处理功能测试

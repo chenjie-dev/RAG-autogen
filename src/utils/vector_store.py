@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from utils.logger import logger
 
 class VectorStore:
     """向量数据库管理类"""
@@ -23,9 +24,11 @@ class VectorStore:
         self.collection = None
         
         # 初始化文本嵌入模型
+        logger.info("正在初始化文本嵌入模型...")
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        logger.info("文本嵌入模型初始化完成")
         
-        print(f"正在连接到Milvus: {self.host}:{self.port}")
+        logger.info(f"正在连接到Milvus: {self.host}:{self.port}")
         
         # 连接Milvus，支持重试
         self._connect_with_retry()
@@ -38,16 +41,16 @@ class VectorStore:
         for attempt in range(max_retries):
             try:
                 connections.connect(host=self.host, port=self.port)
-                print(f"✓ 成功连接到Milvus服务: {self.host}:{self.port}")
+                logger.info(f"成功连接到Milvus服务: {self.host}:{self.port}")
                 return
             except Exception as e:
-                print(f"✗ 尝试第 {attempt+1} 次连接Milvus失败: {str(e)}")
+                logger.info(f"尝试第 {attempt+1} 次连接Milvus失败: {str(e)}")
                 if attempt < max_retries - 1:
-                    print(f"等待 {retry_delay} 秒后重试...")
+                    logger.info(f"等待 {retry_delay} 秒后重试...")
                     import time
                     time.sleep(retry_delay)
                 else:
-                    print(f"✗ 无法连接到Milvus服务，请检查服务是否正在运行")
+                    logger.info(f"无法连接到Milvus服务，请检查服务是否正在运行")
                     raise e
     
     def _connect(self):
@@ -65,20 +68,20 @@ class VectorStore:
                 fields = [field.name for field in collection.schema.fields]
                 # 检查是否需要更新
                 if not all(field in fields for field in ['source', 'timestamp']):
-                    print("检测到集合模式需要更新，正在重新创建...")
+                    logger.info("检测到集合模式需要更新，正在重新创建...")
                     # 删除旧集合
                     utility.drop_collection(self.collection_name)
                     # 创建新集合
                     self._create_collection()
                 else:
-                    print("使用现有集合")
+                    logger.info("使用现有集合")
                     self.collection = collection
                     self.collection.load()
             else:
                 # 创建新集合
                 self._create_collection()
         except Exception as e:
-            print(f"检查集合时出错: {str(e)}")
+            logger.info(f"检查集合时出错: {str(e)}")
             # 如果出错，尝试重新创建集合
             try:
                 utility.drop_collection(self.collection_name)
@@ -112,7 +115,7 @@ class VectorStore:
         self.collection.create_index(field_name="embedding", index_params=index_params)
         # 加载集合到内存
         self.collection.load()
-        print(f"成功创建集合 {self.collection_name} 并建立索引")
+        logger.info(f"成功创建集合 {self.collection_name} 并建立索引")
     
     def add_texts(self, texts: List[str], source: str = "unknown") -> bool:
         """添加文本到向量数据库
@@ -125,11 +128,14 @@ class VectorStore:
             是否成功添加
         """
         try:
+            logger.info(f"开始添加 {len(texts)} 个文本到向量数据库...")
+            
             if not texts:
-                print("文本列表为空")
-                return False
+                logger.info("文本列表为空，跳过添加")
+                return True
             
             # 生成嵌入向量
+            logger.info("正在生成嵌入向量...")
             embeddings = self.embedding_model.encode(texts)
             embeddings_list = embeddings.tolist()
             
@@ -140,10 +146,12 @@ class VectorStore:
             
             # 插入数据
             self.insert_data(texts, embeddings_list, sources, timestamps)
+            
+            logger.info(f"成功添加 {len(texts)} 个文本到向量数据库")
             return True
             
         except Exception as e:
-            print(f"添加文本时出错: {str(e)}")
+            logger.info(f"添加文本时出错: {str(e)}")
             return False
     
     def search_similar(self, query_text: str, top_k: int = 5) -> List[Dict]:
@@ -157,14 +165,19 @@ class VectorStore:
             搜索结果列表
         """
         try:
+            logger.info(f"搜索相似文本: {query_text[:50]}...")
+            
             # 生成查询向量
-            query_embedding = self.embedding_model.encode([query_text])[0].tolist()
+            query_embedding = self.embedding_model.encode([query_text])[0]
             
             # 执行搜索
-            return self.search(query_embedding, top_k)
+            results = self.search(query_embedding, top_k)
+            
+            logger.info(f"搜索完成，找到 {len(results)} 个结果")
+            return results
             
         except Exception as e:
-            print(f"搜索相似文本时出错: {str(e)}")
+            logger.info(f"搜索相似文本时出错: {str(e)}")
             return []
     
     def insert_data(self, texts: List[str], embeddings: List[List[float]], sources: List[str], timestamps: List[str]):
@@ -177,6 +190,8 @@ class VectorStore:
             timestamps: 时间戳列表
         """
         try:
+            logger.info(f"开始插入 {len(texts)} 条数据到向量数据库...")
+            
             # 准备插入数据
             entities = [
                 texts,  # text
@@ -188,12 +203,14 @@ class VectorStore:
             # 插入数据
             self.collection.insert(entities)
             self.collection.flush()
-            print(f"成功插入 {len(texts)} 条数据")
+            logger.info(f"成功插入 {len(texts)} 条数据到向量数据库")
         except Exception as e:
-            print(f"插入数据时出错: {str(e)}")
+            logger.info(f"插入数据时出错: {str(e)}")
+            import traceback
+            logger.info(f"错误详情: {traceback.format_exc()}")
             raise
     
-    def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict]:
+    def search(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Dict]:
         """搜索相似向量
         
         Args:
@@ -204,48 +221,43 @@ class VectorStore:
             搜索结果列表
         """
         try:
-            # 准备搜索参数
-            search_params = {
-                "metric_type": "L2",
-                "params": {"nprobe": 10}
-            }
-            
-            # 执行搜索
+            search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
             results = self.collection.search(
-                data=[query_embedding],
+                data=[query_embedding.tolist()],
                 anns_field="embedding",
                 param=search_params,
                 limit=top_k,
                 output_fields=["text", "source", "timestamp"]
             )
             
-            # 处理搜索结果
-            similar_texts = []
+            # 格式化结果
+            formatted_results = []
             for hits in results:
                 for hit in hits:
-                    similar_texts.append({
+                    formatted_results.append({
+                        "id": hit.id,
                         "text": hit.entity.get("text"),
-                        "source": hit.entity.get("source", "unknown"),
-                        "timestamp": hit.entity.get("timestamp", "unknown"),
-                        "distance": hit.distance
+                        "source": hit.entity.get("source"),
+                        "timestamp": hit.entity.get("timestamp"),
+                        "score": hit.distance
                     })
-            return similar_texts
+            
+            return formatted_results
         except Exception as e:
-            print(f"搜索时出错: {str(e)}")
+            logger.info(f"搜索时出错: {str(e)}")
             return []
     
     def clear_collection(self):
         """清空集合并重新创建"""
         try:
-            if utility.has_collection(self.collection_name):
-                utility.drop_collection(self.collection_name)
-                print(f"已删除集合: {self.collection_name}")
-                # 重新创建集合
-                self._create_collection()
-                print(f"已重新创建集合: {self.collection_name}")
-                return True
+            logger.info(f"正在清空集合: {self.collection_name}")
+            utility.drop_collection(self.collection_name)
+            logger.info("集合清空成功")
+            # 重新创建集合
+            self._create_collection()
+            return True
         except Exception as e:
-            print(f"删除集合时出错: {str(e)}")
+            logger.info(f"清空集合时出错: {str(e)}")
             return False
     
     def get_collection_stats(self) -> Dict:
@@ -264,5 +276,5 @@ class VectorStore:
                     "collection_name": self.collection_name
                 }
         except Exception as e:
-            print(f"获取集合统计信息时出错: {str(e)}")
+            logger.info(f"获取集合统计信息时出错: {str(e)}")
         return {"total_documents": 0, "total_vectors": 0, "collection_name": self.collection_name} 
