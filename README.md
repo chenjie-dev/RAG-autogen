@@ -24,7 +24,7 @@
 - **前端**: HTML5, CSS3, JavaScript, Bootstrap 5
 - **AI模型**: DeepSeek R1 14B (通过Ollama)
 - **向量数据库**: Milvus
-- **文档处理**: DocLing (PDF/Word), python-docx, markdown
+- **文档处理**: DocLing (PDF/Word), python-docx, markdown 
 
 ## 📁 项目结构
 
