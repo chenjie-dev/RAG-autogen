@@ -15,7 +15,9 @@ openai>=1.0.0                   # OpenAI API客户端（AutoGen依赖）
 asyncio-mqtt>=0.16.0            # MQTT异步客户端（可选，用于智能体通信）
 
 # 文档处理:
-pdfplumber>=0.9.0               # PDF文档解析和文本提取
+docling-core>=0.1.0             # DocLing核心库，用于PDF文档解析
+docling[backend-pypdfium2]>=0.1.0  # DocLing PDF后端，基于PyPDFium2
+pypdfium2>=4.0.0                # PyPDFium2 PDF处理库
 python-docx>=0.8.11             # Word文档(.docx)处理
 markdown>=3.4.0                 # Markdown文档解析
 beautifulsoup4>=4.11.0          # HTML解析，用于Markdown转HTML

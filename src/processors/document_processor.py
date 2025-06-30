@@ -1,29 +1,157 @@
 import os
 from typing import List
+from pathlib import Path
 import docx
 import markdown
 from bs4 import BeautifulSoup
 from pptx import Presentation
-import pdfplumber
+
+# DocLing imports
+from docling_core.types.doc import BoundingBox
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.document import InputDocument
 
 class DocumentProcessor:
-    """文档处理器，支持多种文件格式"""
+    """文档处理器，支持多种文件格式，使用DocLing处理PDF"""
     
     @staticmethod
+    def _get_docling_backend(pdf_path: str) -> PyPdfiumDocumentBackend:
+        """获取DocLing PDF后端"""
+        # 将字符串路径转换为Path对象
+        pdf_path_obj = Path(pdf_path)
+        in_doc = InputDocument(
+            path_or_stream=pdf_path_obj,
+            format=InputFormat.PDF,
+            backend=PyPdfiumDocumentBackend,
+        )
+        return in_doc._backend
+
+    @staticmethod
     def extract_text_from_pdf(file_path: str) -> List[str]:
-        """从PDF文件中提取文本"""
+        """从PDF文件中提取文本，使用DocLing"""
         texts = []
         try:
+            doc_backend = DocumentProcessor._get_docling_backend(file_path)
+            
+            for page_index in range(doc_backend.page_count()):
+                page_backend = doc_backend.load_page(page_index)
+                
+                # 获取页面中的所有文本单元格
+                text_cells = list(page_backend.get_text_cells())
+                
+                # 按位置排序文本单元格（从上到下，从左到右）
+                # 添加安全检查，确保cell有bbox属性
+                sorted_cells = []
+                for cell in text_cells:
+                    if hasattr(cell, 'bbox') and cell.bbox is not None:
+                        sorted_cells.append(cell)
+                    else:
+                        # 如果没有bbox，直接添加到列表末尾
+                        sorted_cells.append(cell)
+                
+                # 尝试按位置排序，如果失败则保持原顺序
+                try:
+                    sorted_cells = sorted(sorted_cells, key=lambda cell: (cell.bbox.t, cell.bbox.l) if hasattr(cell, 'bbox') and cell.bbox else (0, 0))
+                except Exception as sort_error:
+                    print(f"排序文本单元格时出错，保持原顺序: {sort_error}")
+                
+                # 提取文本内容
+                page_texts = []
+                for cell in sorted_cells:
+                    if cell.text.strip():
+                        page_texts.append(cell.text.strip())
+                
+                # 将页面文本合并为一个段落
+                if page_texts:
+                    page_content = " ".join(page_texts)
+                    # 按自然段落分割
+                    paragraphs = [p.strip() for p in page_content.split('\n\n') if p.strip()]
+                    if not paragraphs:
+                        # 如果没有自然段落，将整个页面作为一个段落
+                        paragraphs = [page_content]
+                    texts.extend(paragraphs)
+                    
+        except Exception as e:
+            print(f"使用DocLing处理PDF文件时出错: {str(e)}")
+            # 如果DocLing失败，尝试使用备用方法
+            try:
+                texts = DocumentProcessor._extract_text_from_pdf_fallback(file_path)
+            except Exception as fallback_error:
+                print(f"备用PDF处理方法也失败: {str(fallback_error)}")
+        return texts
+
+    @staticmethod
+    def _extract_text_from_pdf_fallback(file_path: str) -> List[str]:
+        """PDF处理的备用方法"""
+        # 这里可以添加其他PDF处理库作为备用
+        # 例如使用PyPDF2或pdfplumber
+        texts = []
+        try:
+            import pdfplumber
             with pdfplumber.open(file_path) as pdf:
                 for page in pdf.pages:
                     text = page.extract_text()
                     if text:
-                        # 分段处理
                         paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
                         texts.extend(paragraphs)
+        except ImportError:
+            print("pdfplumber未安装，无法使用备用PDF处理方法")
         except Exception as e:
-            print(f"处理PDF文件时出错: {str(e)}")
+            print(f"备用PDF处理方法出错: {str(e)}")
         return texts
+
+    @staticmethod
+    def extract_text_from_pdf_with_layout(file_path: str) -> List[dict]:
+        """从PDF文件中提取文本和布局信息，使用DocLing"""
+        results = []
+        try:
+            doc_backend = DocumentProcessor._get_docling_backend(file_path)
+            
+            for page_index in range(doc_backend.page_count()):
+                page_backend = doc_backend.load_page(page_index)
+                
+                # 获取页面中的所有文本单元格
+                text_cells = list(page_backend.get_text_cells())
+                
+                page_data = {
+                    'page_index': page_index,
+                    'cells': []
+                }
+                
+                for cell in text_cells:
+                    if cell.text.strip():
+                        cell_data = {
+                            'text': cell.text.strip(),
+                            'bbox': {
+                                'left': cell.bbox.l,
+                                'top': cell.bbox.t,
+                                'right': cell.bbox.r,
+                                'bottom': cell.bbox.b
+                            },
+                            'font_size': getattr(cell, 'font_size', None),
+                            'font_name': getattr(cell, 'font_name', None)
+                        }
+                        page_data['cells'].append(cell_data)
+                
+                results.append(page_data)
+                    
+        except Exception as e:
+            print(f"使用DocLing提取PDF布局信息时出错: {str(e)}")
+        return results
+
+    @staticmethod
+    def extract_text_from_pdf_in_region(file_path: str, bbox: BoundingBox, page_index: int = 0) -> str:
+        """从PDF文件的指定区域提取文本"""
+        try:
+            doc_backend = DocumentProcessor._get_docling_backend(file_path)
+            page_backend = doc_backend.load_page(page_index)
+            
+            text = page_backend.get_text_in_rect(bbox=bbox)
+            return text.strip()
+        except Exception as e:
+            print(f"从PDF区域提取文本时出错: {str(e)}")
+            return ""
 
     @staticmethod
     def extract_text_from_docx(file_path: str) -> List[str]:

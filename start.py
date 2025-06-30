@@ -43,9 +43,10 @@ from config.settings import OLLAMA_BASE_URL, MILVUS_HOST, MILVUS_PORT
 def print_banner():
     """打印启动横幅"""
     print("=" * 60)
-    print("🚀 金融知识RAG问答系统")
+    print("🚀 金融知识RAG问答系统 (DocLing增强版)")
     print("=" * 60)
     print("功能特性:")
+    print("  • 高级PDF处理 (DocLing精确布局识别)")
     print("  • 多格式文档处理 (PDF, DOCX, MD, PPTX, TXT)")
     print("  • 智能问答系统")
     print("  • 向量数据库存储")
@@ -62,7 +63,9 @@ def check_dependencies():
         'pymilvus': 'pymilvus',
         'sentence_transformers': 'sentence_transformers',
         'ollama': 'ollama',
-        'pdfplumber': 'pdfplumber',
+        'docling-core': 'docling_core',
+        'docling': 'docling',
+        'pypdfium2': 'pypdfium2',
         'python-docx': 'docx',
         'markdown': 'markdown',
         'beautifulsoup4': 'bs4',

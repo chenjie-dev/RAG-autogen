@@ -7,6 +7,7 @@
 ### 核心功能
 - **双系统架构**: 传统RAG + AutoGen智能体协作
 - **多格式文档支持**: PDF, DOCX, MD, PPTX, TXT
+- **高级PDF处理**: 基于DocLing的精确布局识别和文本提取
 - **智能问答**: 基于知识库的精准回答
 - **Web界面**: 现代化的用户界面，支持流式回答
 - **打字机效果**: 优化的聊天体验，实时显示思考过程
@@ -22,7 +23,7 @@
 - **前端**: HTML5, CSS3, JavaScript, Bootstrap 5
 - **AI模型**: DeepSeek R1 14B (通过Ollama)
 - **向量数据库**: Milvus
-- **文档处理**: pdfplumber, python-docx, markdown
+- **文档处理**: DocLing (PDF), python-docx, markdown
 
 ## 📁 项目结构
 
@@ -34,7 +35,7 @@ RAG-autogen/
 │   │   ├── autogen_web_ui.py     # AutoGen Web UI
 │   │   └── rag_finance_qa.py     # 传统RAG系统
 │   ├── processors/               # 文档处理器
-│   │   └── document_processor.py # 多格式文档处理
+│   │   └── document_processor.py # 多格式文档处理（DocLing集成）
 │   ├── utils/                    # 工具模块
 │   │   ├── text_utils.py         # 文本处理工具
 │   │   ├── ui_utils.py           # UI工具
@@ -56,6 +57,7 @@ RAG-autogen/
 ├── volumes/                      # Docker卷
 ├── k8s/                         # Kubernetes配置
 ├── start.py                     # 统一启动脚本
+├── test_docling_pdf.py          # DocLing PDF处理测试
 ├── requirements.txt             # Python依赖
 ├── Dockerfile                   # Docker配置
 ├── docker-compose.yml           # Docker Compose配置
@@ -81,7 +83,13 @@ cd RAG-autogen
 pip install -r requirements.txt
 ```
 
-### 3. 启动服务
+### 3. 测试DocLing PDF处理（可选）
+```bash
+# 测试DocLing安装和PDF处理功能
+python test_docling_pdf.py
+```
+
+### 4. 启动服务
 
 #### 方式一：Docker启动（推荐）
 ```bash
@@ -104,7 +112,7 @@ python start.py cli
 python start.py status
 ```
 
-### 4. 访问系统
+### 5. 访问系统
 - **Web界面**: http://localhost:5000
 - **API文档**: http://localhost:5000/api
 
@@ -119,12 +127,29 @@ python start.py status
 2. **文档上传**
    - 支持拖拽上传
    - 支持多种格式: PDF, DOCX, MD, PPTX, TXT
+   - **PDF处理**: 使用DocLing进行精确布局识别
    - 实时显示上传进度
 
 3. **智能问答**
    - 输入问题，系统自动选择最佳回答方式
    - 实时显示思考过程和答案生成
    - 支持流式回答，打字机效果
+
+### PDF处理特性
+
+#### DocLing优势
+- **精确布局识别**: 保持文档原始布局结构
+- **文本单元格提取**: 按位置和字体信息组织文本
+- **区域文本提取**: 支持指定区域文本提取
+- **字体信息保留**: 保留字体大小、字体名称等元数据
+- **多页处理**: 支持复杂多页文档
+
+#### 处理流程
+1. **文档加载**: 使用PyPDFium2后端加载PDF
+2. **页面分析**: 逐页分析文本单元格布局
+3. **文本排序**: 按位置（从上到下，从左到右）排序
+4. **段落分割**: 智能识别自然段落边界
+5. **备用处理**: 如果DocLing失败，自动切换到备用方法
 
 ### AutoGen模式说明
 
@@ -170,6 +195,10 @@ MILVUS_COLLECTION_NAME = "rag_documents"
 # 系统配置
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 SUPPORTED_FORMATS = ['.pdf', '.docx', '.md', '.pptx', '.txt']
+
+# DocLing配置
+DOCLING_ENABLE_LAYOUT_EXTRACTION = True  # 启用布局信息提取
+DOCLING_FALLBACK_TO_PDFPLUMBER = True    # 启用备用PDF处理
 ```
 
 ### 环境变量

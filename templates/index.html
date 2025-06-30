@@ -557,9 +557,9 @@
                                                 <strong>传统RAG系统</strong>
                                                 <span class="agent-status available" id="traditional-status">可用</span>
                                             </label>
-                                        </div>
+                    </div>
                                         <small class="text-muted">使用传统的检索增强生成技术</small>
-                                    </div>
+                </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="system-selector" id="autogen-rag" onclick="selectSystem('autogen')">
@@ -603,12 +603,12 @@
                             </div>
                             <div id="uploadProgress" class="mt-3" style="display: none;">
                                 <div class="progress">
-                                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
-                                </div>
-                                <small class="text-muted" id="uploadStatus">准备上传...</small>
+                                <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                             </div>
+                                <small class="text-muted" id="uploadStatus">准备上传...</small>
                         </div>
                     </div>
+                </div>
 
                     <!-- 系统统计 -->
                     <div class="card stats-card">
@@ -625,20 +625,20 @@
                                     <div class="col-6">
                                         <h4 id="totalVectors">-</h4>
                                         <small>向量数量</small>
-                                    </div>
                                 </div>
+                            </div>
                                 <hr>
                                 <div class="row text-center">
                                     <div class="col-6">
                                         <h4 id="autogenAgents">-</h4>
                                         <small>智能体数量</small>
-                                    </div>
+                        </div>
                                     <div class="col-6">
                                         <h4 id="systemStatus">-</h4>
                                         <small>系统状态</small>
-                                    </div>
-                                </div>
-                            </div>
+                    </div>
+                </div>
+            </div>
                         </div>
                     </div>
 
@@ -657,8 +657,8 @@
                                 <input type="text" class="form-control" id="knowledgeSource" placeholder="知识来源">
                             </div>
                             <button class="btn btn-primary" onclick="addKnowledge()">
-                                <i class="fas fa-plus"></i> 添加知识
-                            </button>
+                                    <i class="fas fa-plus"></i> 添加知识
+                                </button>
                             <button class="btn btn-danger ms-2" onclick="clearKnowledge()">
                                 <i class="fas fa-trash"></i> 清空知识库
                             </button>
@@ -680,14 +680,14 @@
                                     <i class="fas fa-robot"></i> 欢迎使用金融知识RAG问答系统！请选择系统模式并开始提问。
                                 </div>
                             </div>
-                            <div class="input-group">
+                        <div class="input-group">
                                 <input type="text" class="form-control" id="questionInput" placeholder="请输入您的问题..." onkeypress="handleKeyPress(event)">
                                 <button class="btn btn-primary" onclick="askQuestion()">
-                                    <i class="fas fa-paper-plane"></i> 发送
-                                </button>
-                            </div>
+                                <i class="fas fa-paper-plane"></i> 发送
+                            </button>
                         </div>
                     </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -739,7 +739,7 @@
                 el.classList.remove('active');
             });
             document.getElementById(system === 'traditional' ? 'traditional-rag' : 'autogen-rag').classList.add('active');
-            
+
             // 更新当前系统显示
             const currentSystemBadge = document.getElementById('currentSystem');
             currentSystemBadge.textContent = system === 'traditional' ? '传统RAG' : 'AutoGen智能体';
@@ -768,21 +768,21 @@
         function setupFileUpload() {
             const fileInput = document.getElementById('fileInput');
             const uploadArea = document.getElementById('uploadArea');
-            
+
             // 文件选择处理
             fileInput.addEventListener('change', handleFileSelect);
-            
+
             // 拖拽上传
             uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 uploadArea.classList.add('dragover');
             });
-            
+
             uploadArea.addEventListener('dragleave', (e) => {
                 e.preventDefault();
                 uploadArea.classList.remove('dragover');
             });
-            
+
             uploadArea.addEventListener('drop', (e) => {
                 e.preventDefault();
                 uploadArea.classList.remove('dragover');
@@ -805,7 +805,7 @@
         async function uploadFile(file) {
             const formData = new FormData();
             formData.append('file', file);
-            
+
             // 显示上传进度
             const progressDiv = document.getElementById('uploadProgress');
             const progressBar = progressDiv.querySelector('.progress-bar');
@@ -817,22 +817,22 @@
             
             try {
                 const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
+                method: 'POST',
+                body: formData
                 });
                 
                 const result = await response.json();
                 if (response.ok) {
-                    progressBar.style.width = '100%';
+                progressBar.style.width = '100%';
                     statusText.textContent = result.message;
                     addMessage('系统', result.message, 'bot');
                     
                     // 刷新统计信息
-                    loadStats();
+                loadStats();
                     
-                    setTimeout(() => {
+                setTimeout(() => {
                         progressDiv.style.display = 'none';
-                    }, 3000);
+                }, 3000);
                 } else {
                     statusText.textContent = '上传失败: ' + result.error;
                     addMessage('系统', '上传失败: ' + result.error, 'bot');
@@ -840,7 +840,7 @@
             } catch (error) {
                 statusText.textContent = '上传失败: ' + error.message;
                 addMessage('system', '上传失败: ' + error.message, 'bot');
-            }
+                    }
         }
 
         // 处理按键事件
@@ -949,7 +949,7 @@
                                         // 收集智能体状态作为思考过程
                                         agentStatus = `${data.agent}: ${data.message}`;
                                         thinkingSteps.push(agentStatus);
-                                        
+            
                                         // 显示当前智能体状态
                                         typingText.innerHTML = `
                                             <span class="status-message">${agentStatus}</span>
@@ -965,7 +965,7 @@
                                         // 开始显示思考过程
                                         isThinking = true;
                                         thinkContent = data.content;
-                                        
+            
                                         // 切换到思考模式显示
                                         answerDiv.className = 'message think-message typing-message';
                                         answerDiv.innerHTML = `
@@ -1058,7 +1058,7 @@
                             }
                         }
                     }
-                }
+                                    }
             } catch (error) {
                 // 处理错误
                 clearInterval(cursorInterval);
@@ -1115,8 +1115,8 @@
             messageDiv.innerHTML = `<strong>${icon}${sender}:</strong> ${content}`;
             container.appendChild(messageDiv);
             container.scrollTop = container.scrollHeight;
-        }
-
+                        }
+                        
         // 更新最后一条消息（保留用于兼容性）
         function updateLastMessage(content) {
             const container = document.getElementById('chatContainer');
@@ -1158,9 +1158,9 @@
                     document.getElementById('knowledgeText').value = '';
                     document.getElementById('knowledgeSource').value = '';
                     loadStats();
-                } else {
+            } else {
                     addMessage('系统', '添加失败: ' + result.error, 'bot');
-                }
+            }
             } catch (error) {
                 addMessage('系统', '添加失败: ' + error.message, 'bot');
             }
@@ -1174,7 +1174,7 @@
             
             try {
                 const response = await fetch('/clear', {
-                    method: 'POST'
+                method: 'POST'
                 });
                 
                 const result = await response.json();
