@@ -8,6 +8,7 @@ import queue
 import re
 import json
 from flask import Response
+import asyncio
 
 # 导入我们的RAG系统
 from core.rag_finance_qa import FinanceRAGSystem
@@ -206,7 +207,22 @@ def ask_question():
     try:
         context = rag_system.search_similar(question)
         context_text = "\n".join([hit["text"] for hit in context])
-        prompt = f"请结合以下检索到的内容和你自己的知识，回答用户问题：\n\n上下文：\n{context_text}\n\n问题：{question}\n\n答案："
+        prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+
+要求：
+1. 使用markdown格式回答
+2. 段落之间用空行分隔
+3. 重要信息用**粗体**标记
+4. 列表使用- 或1. 格式
+5. 代码用`代码`格式
+6. 回答要准确、完整、有条理
+
+上下文：
+{context_text}
+
+问题：{question}
+
+答案："""
         response = rag_system.ollama_client.chat(
             model='deepseek-r1:14b',
             messages=[{'role': 'user', 'content': prompt}]
@@ -278,7 +294,22 @@ def ask_question_stream():
             yield f"data: {json.dumps({'type': 'think', 'content': think_content})}\n\n"
             
             # 构建提示词
-            prompt = f"请结合以下检索到的内容和你自己的知识，回答用户问题：\n\n上下文：\n{context_text}\n\n问题：{question}\n\n答案："
+            prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+
+要求：
+1. 使用markdown格式回答
+2. 段落之间用空行分隔
+3. 重要信息用**粗体**标记
+4. 列表使用- 或1. 格式
+5. 代码用`代码`格式
+6. 回答要准确、完整、有条理
+
+上下文：
+{context_text}
+
+问题：{question}
+
+答案："""
             
             # 使用流式输出
             stream = rag_system.ollama_client.chat(
@@ -321,9 +352,6 @@ def ask_question_stream_autogen():
     
     def generate():
         try:
-            import asyncio
-            import json
-            
             # 发送开始标记
             mode_text = "快速模式" if fast_mode else "完整模式"
             yield f"data: {json.dumps({'type': 'start', 'message': f'智能体开始协作（{mode_text}）...'})}\n\n"
@@ -357,12 +385,61 @@ def ask_question_stream_autogen():
                 yield f"data: {json.dumps({'type': 'agent_status', 'agent': '分析智能体', 'message': '正在分析检索结果...'})}\n\n"
                 yield f"data: {json.dumps({'type': 'agent_status', 'agent': '回答智能体', 'message': '正在生成最终答案...'})}\n\n"
             
-            # 发送最终答案
+            # 获取答案内容
             answer = result.get('answer', '智能体协作未能生成有效答案')
-            yield f"data: {json.dumps({'type': 'answer', 'content': answer})}\n\n"
             
-            # 发送完成标记
-            yield f"data: {json.dumps({'type': 'complete', 'answer': answer, 'think': think_content})}\n\n"
+            if fast_mode:
+                # 快速模式：使用真正的流式输出
+                # 构建提示词
+                context_text = result.get('context', '')
+                prompt = f"""基于以下检索到的信息，请直接回答用户问题。
+
+要求：
+1. 使用markdown格式回答
+2. 段落之间用空行分隔
+3. 重要信息用**粗体**标记
+4. 列表使用- 或1. 格式
+5. 代码用`代码`格式
+6. 回答要准确、完整、有条理
+7. 用中文回答，语言要自然流畅
+
+检索到的信息：
+{context_text}
+
+用户问题：{question}
+
+答案："""
+                
+                # 使用流式输出，就像传统RAG系统一样
+                stream = autogen_system.answer_agent.client.chat(
+                    model='deepseek-r1:14b',
+                    messages=[{'role': 'user', 'content': prompt}],
+                    stream=True,
+                    options={
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "num_predict": 1000
+                    }
+                )
+                
+                full_answer = ""
+                for chunk in stream:
+                    if 'message' in chunk and 'content' in chunk['message']:
+                        content = chunk['message']['content']
+                        full_answer += content
+                        
+                        # 发送回答内容
+                        yield f"data: {json.dumps({'type': 'answer', 'content': content})}\n\n"
+                
+                # 发送完成标记
+                yield f"data: {json.dumps({'type': 'complete', 'answer': full_answer, 'think': think_content})}\n\n"
+            else:
+                # 完整模式：逐字符发送（因为答案已经生成完成）
+                for char in answer:
+                    yield f"data: {json.dumps({'type': 'answer', 'content': char})}\n\n"
+                
+                # 发送完成标记
+                yield f"data: {json.dumps({'type': 'complete', 'answer': answer, 'think': think_content})}\n\n"
             
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': f'智能体协作失败: {str(e)}'})}\n\n"
