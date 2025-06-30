@@ -157,15 +157,8 @@ def upload_file():
     logger.info(f"上传文件: {original_filename}")
     
     if file and allowed_file(original_filename):
-        # 安全地处理文件名，但保留扩展名
-        filename = secure_filename(original_filename)
-        
-        # 如果secure_filename移除了扩展名，尝试恢复
-        if '.' not in filename and '.' in original_filename:
-            # 获取原始扩展名
-            original_ext = original_filename.rsplit('.', 1)[1].lower()
-            # 添加扩展名到安全文件名
-            filename = f"{filename}.{original_ext}"
+        # 使用自定义的安全文件名处理函数
+        filename = safe_filename(original_filename)
         
         logger.info(f"处理后的文件名: {filename}")
         
@@ -539,6 +532,42 @@ def clear_knowledge_base():
             return jsonify({'error': '清空知识库失败'}), 500
     except Exception as e:
         return jsonify({'error': f'清空知识库失败: {str(e)}'}), 500
+
+def safe_filename(original_filename: str) -> str:
+    """安全地处理文件名，保留可读性但确保安全性"""
+    import re
+    import unicodedata
+    
+    if not original_filename:
+        return "unknown_file"
+    
+    # 分离文件名和扩展名
+    name, ext = os.path.splitext(original_filename)
+    
+    # 规范化Unicode字符
+    name = unicodedata.normalize('NFKC', name)
+    
+    # 替换不安全字符，但保留中文字符
+    # 只替换真正危险的字符，保留空格、中文、数字、字母等
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
+    
+    # 移除首尾的空格和点
+    name = name.strip(' .')
+    
+    # 如果文件名为空，使用默认名称
+    if not name:
+        name = "document"
+    
+    # 限制文件名长度（不包括扩展名）
+    if len(name) > 100:
+        name = name[:100]
+    
+    # 重新组合文件名和扩展名
+    safe_filename = name + ext.lower()
+    
+    logger.info(f"文件名处理: {original_filename} -> {safe_filename}")
+    
+    return safe_filename
 
 # 初始化系统
 initialize_systems()
