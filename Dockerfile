@@ -8,6 +8,10 @@ WORKDIR /app
 ENV PYTHONPATH=/app
 ENV FLASK_APP=src/web/web_ui.py
 ENV FLASK_ENV=production
+ENV TZ=Asia/Shanghai
+
+# 设置时区为东八区
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 安装系统依赖（使用默认源，如果失败则尝试国内镜像）
 RUN apt-get update && apt-get install -y \
@@ -16,10 +20,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     netcat-openbsd \
+    tzdata \
     || (echo "deb http://mirrors.aliyun.com/debian/ bookworm main contrib non-free" > /etc/apt/sources.list \
         && echo "deb http://mirrors.aliyun.com/debian/ bookworm-updates main contrib non-free" >> /etc/apt/sources.list \
         && echo "deb http://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free" >> /etc/apt/sources.list \
-        && apt-get update && apt-get install -y gcc g++ curl wget netcat-openbsd) \
+        && apt-get update && apt-get install -y gcc g++ curl wget netcat-openbsd tzdata) \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制requirements.txt并安装Python依赖
