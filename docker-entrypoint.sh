@@ -32,11 +32,11 @@ fi
 mkdir -p uploads data/exports logs volumes
 
 # 设置权限
-chmod +x start.py start_web_ui.py
+chmod +x start.py docker-entrypoint.sh
 
 echo "=== 启动RAG Web应用 ==="
 echo "访问地址: http://localhost:5000"
 echo "注意: 请确保外部Ollama服务正在运行: $OLLAMA_HOST"
 
 # 启动应用
-exec python start_web_ui.py 
+exec python start.py web 

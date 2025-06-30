@@ -33,7 +33,7 @@ COPY . .
 RUN mkdir -p uploads data/exports logs volumes
 
 # 设置权限
-RUN chmod +x start.py start_web_ui.py docker-entrypoint.sh
+RUN chmod +x start.py docker-entrypoint.sh
 
 # 暴露端口
 EXPOSE 5000

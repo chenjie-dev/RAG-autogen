@@ -2,6 +2,8 @@ from typing import List, Dict
 from pymilvus import connections, Collection, CollectionSchema, FieldSchema, DataType, utility
 from datetime import datetime
 import os
+import numpy as np
+from sentence_transformers import SentenceTransformer
 
 class VectorStore:
     """向量数据库管理类"""
@@ -19,6 +21,9 @@ class VectorStore:
         self.port = port or os.getenv("MILVUS_PORT", "19530")
         self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "finance_knowledge")
         self.collection = None
+        
+        # 初始化文本嵌入模型
+        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         
         print(f"正在连接到Milvus: {self.host}:{self.port}")
         
@@ -109,6 +114,59 @@ class VectorStore:
         self.collection.load()
         print(f"成功创建集合 {self.collection_name} 并建立索引")
     
+    def add_texts(self, texts: List[str], source: str = "unknown") -> bool:
+        """添加文本到向量数据库
+        
+        Args:
+            texts: 文本列表
+            source: 来源信息
+            
+        Returns:
+            是否成功添加
+        """
+        try:
+            if not texts:
+                print("文本列表为空")
+                return False
+            
+            # 生成嵌入向量
+            embeddings = self.embedding_model.encode(texts)
+            embeddings_list = embeddings.tolist()
+            
+            # 生成时间戳
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamps = [timestamp] * len(texts)
+            sources = [source] * len(texts)
+            
+            # 插入数据
+            self.insert_data(texts, embeddings_list, sources, timestamps)
+            return True
+            
+        except Exception as e:
+            print(f"添加文本时出错: {str(e)}")
+            return False
+    
+    def search_similar(self, query_text: str, top_k: int = 5) -> List[Dict]:
+        """搜索相似文本
+        
+        Args:
+            query_text: 查询文本
+            top_k: 返回结果数量
+            
+        Returns:
+            搜索结果列表
+        """
+        try:
+            # 生成查询向量
+            query_embedding = self.embedding_model.encode([query_text])[0].tolist()
+            
+            # 执行搜索
+            return self.search(query_embedding, top_k)
+            
+        except Exception as e:
+            print(f"搜索相似文本时出错: {str(e)}")
+            return []
+    
     def insert_data(self, texts: List[str], embeddings: List[List[float]], sources: List[str], timestamps: List[str]):
         """插入数据到向量数据库
         
@@ -185,9 +243,10 @@ class VectorStore:
                 # 重新创建集合
                 self._create_collection()
                 print(f"已重新创建集合: {self.collection_name}")
+                return True
         except Exception as e:
             print(f"删除集合时出错: {str(e)}")
-            raise
+            return False
     
     def get_collection_stats(self) -> Dict:
         """获取集合统计信息
@@ -200,9 +259,10 @@ class VectorStore:
                 # 使用 num_entities 替代 get_statistics
                 row_count = self.collection.num_entities
                 return {
-                    "row_count": row_count,
+                    "total_documents": row_count,
+                    "total_vectors": row_count,
                     "collection_name": self.collection_name
                 }
         except Exception as e:
             print(f"获取集合统计信息时出错: {str(e)}")
-        return {"row_count": 0, "collection_name": self.collection_name} 
+        return {"total_documents": 0, "total_vectors": 0, "collection_name": self.collection_name} 
