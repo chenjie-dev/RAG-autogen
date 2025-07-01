@@ -7,10 +7,13 @@ from bs4 import BeautifulSoup
 from pptx import Presentation
 
 # DocLing imports
-from docling_core.types.doc import BoundingBox
-from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+from docling.backend.docling_parse_v2_backend import DoclingParseV2DocumentBackend
+from docling.document_converter import DocumentConverter, FormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode, EasyOcrOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.document import InputDocument
+from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
+from docling.datamodel.base_models import ConversionStatus
+from docling.datamodel.document import ConversionResult, InputDocument
 
 # 导入日志模块
 from utils.logger import logger
@@ -19,142 +22,183 @@ class DocumentProcessor:
     """文档处理器，支持多种文件格式，使用DocLing处理PDF"""
     
     @staticmethod
-    def _get_docling_backend(pdf_path: str) -> PyPdfiumDocumentBackend:
-        """获取DocLing PDF后端"""
-        # 将字符串路径转换为Path对象
-        pdf_path_obj = Path(pdf_path)
-        in_doc = InputDocument(
-            path_or_stream=pdf_path_obj,
-            format=InputFormat.PDF,
-            backend=PyPdfiumDocumentBackend,
-        )
-        return in_doc._backend
+    def _create_document_converter():
+        """创建文档转换器，使用DocLingParseV2DocumentBackend"""
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = True
+        ocr_options = EasyOcrOptions(lang=['en'], force_full_page_ocr=False)
+        pipeline_options.ocr_options = ocr_options
+        pipeline_options.do_table_structure = True
+        pipeline_options.table_structure_options.do_cell_matching = True
+        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+        
+        format_options = {
+            InputFormat.PDF: FormatOption(
+                pipeline_cls=StandardPdfPipeline,
+                pipeline_options=pipeline_options,
+                backend=DoclingParseV2DocumentBackend
+            )
+        }
+        
+        return DocumentConverter(format_options=format_options)
 
     @staticmethod
     def extract_text_from_pdf(file_path: str) -> List[str]:
-        """从PDF文件中提取文本，使用DocLing"""
+        """从PDF文件中提取文本，使用DocLingParseV2DocumentBackend"""
         texts = []
         try:
-            doc_backend = DocumentProcessor._get_docling_backend(file_path)
+            logger.info(f"开始处理PDF文件: {os.path.basename(file_path)}")
             
-            for page_index in range(doc_backend.page_count()):
-                page_backend = doc_backend.load_page(page_index)
-                
-                # 获取页面中的所有文本单元格
-                text_cells = list(page_backend.get_text_cells())
-                
-                # 按位置排序文本单元格（从上到下，从左到右）
-                # 添加安全检查，确保cell有bbox属性
-                sorted_cells = []
-                for cell in text_cells:
-                    if hasattr(cell, 'bbox') and cell.bbox is not None:
-                        sorted_cells.append(cell)
-                    else:
-                        # 如果没有bbox，直接添加到列表末尾
-                        sorted_cells.append(cell)
-                
-                # 尝试按位置排序，如果失败则保持原顺序
-                try:
-                    sorted_cells = sorted(sorted_cells, key=lambda cell: (cell.bbox.t, cell.bbox.l) if hasattr(cell, 'bbox') and cell.bbox else (0, 0))
-                except Exception as sort_error:
-                    logger.info(f"排序文本单元格时出错，保持原顺序: {sort_error}")
-                
-                # 提取文本内容
-                page_texts = []
-                for cell in sorted_cells:
-                    if cell.text.strip():
-                        page_texts.append(cell.text.strip())
-                
-                # 将页面文本合并为一个段落
-                if page_texts:
-                    page_content = " ".join(page_texts)
-                    # 按自然段落分割
-                    paragraphs = [p.strip() for p in page_content.split('\n\n') if p.strip()]
-                    if not paragraphs:
-                        # 如果没有自然段落，将整个页面作为一个段落
-                        paragraphs = [page_content]
-                    texts.extend(paragraphs)
+            # 创建文档转换器
+            doc_converter = DocumentProcessor._create_document_converter()
+            
+            # 转换文档
+            input_path = Path(file_path)
+            conv_results = doc_converter.convert_all(source=[input_path])
+            
+            for conv_result in conv_results:
+                if conv_result.status == ConversionStatus.SUCCESS:
+                    # 获取文档数据
+                    data = conv_result.document.export_to_dict()
+                    
+                    # 处理文本内容
+                    if 'texts' in data:
+                        for text_item in data['texts']:
+                            if 'text' in text_item and text_item['text'].strip():
+                                texts.append(text_item['text'].strip())
+                    
+                    # 处理表格内容
+                    if 'tables' in data:
+                        for table_item in data['tables']:
+                            if 'data' in table_item and 'grid' in table_item['data']:
+                                for row in table_item['data']['grid']:
+                                    row_texts = []
+                                    for cell in row:
+                                        if 'text' in cell and cell['text'].strip():
+                                            row_texts.append(cell['text'].strip())
+                                    if row_texts:
+                                        texts.append(" | ".join(row_texts))
+                    
+                    logger.info(f"使用DocLing处理PDF文件，提取了 {len(texts)} 个文本块")
+                    
+                    # 显示提取的文本示例
+                    if texts:
+                        logger.info("提取的文本示例:")
+                        for i, text in enumerate(texts[:3]):
+                            logger.info(f"  {i+1}: {text[:100]}...")
+                    
+                else:
+                    logger.error(f"PDF文档转换失败: {conv_result.status}")
                     
         except Exception as e:
-            logger.info(f"使用DocLing处理PDF文件时出错: {str(e)}")
-            # 如果DocLing失败，尝试使用备用方法
-            try:
-                texts = DocumentProcessor._extract_text_from_pdf_fallback(file_path)
-            except Exception as fallback_error:
-                logger.info(f"备用PDF处理方法也失败: {str(fallback_error)}")
-        return texts
-
-    @staticmethod
-    def _extract_text_from_pdf_fallback(file_path: str) -> List[str]:
-        """PDF处理的备用方法"""
-        # 这里可以添加其他PDF处理库作为备用
-        # 例如使用PyPDF2或pdfplumber
-        texts = []
-        try:
-            import pdfplumber
-            with pdfplumber.open(file_path) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if text:
-                        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-                        texts.extend(paragraphs)
-        except ImportError:
-            logger.info("pdfplumber未安装，无法使用备用PDF处理方法")
-        except Exception as e:
-            logger.info(f"备用PDF处理方法出错: {str(e)}")
+            logger.error(f"使用DocLing处理PDF文件时出错: {str(e)}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            
         return texts
 
     @staticmethod
     def extract_text_from_pdf_with_layout(file_path: str) -> List[dict]:
-        """从PDF文件中提取文本和布局信息，使用DocLing"""
+        """从PDF文件中提取文本和布局信息，使用DocLingParseV2DocumentBackend"""
         results = []
         try:
-            doc_backend = DocumentProcessor._get_docling_backend(file_path)
+            logger.info(f"开始处理PDF文件布局: {os.path.basename(file_path)}")
             
-            for page_index in range(doc_backend.page_count()):
-                page_backend = doc_backend.load_page(page_index)
-                
-                # 获取页面中的所有文本单元格
-                text_cells = list(page_backend.get_text_cells())
-                
-                page_data = {
-                    'page_index': page_index,
-                    'cells': []
-                }
-                
-                for cell in text_cells:
-                    if cell.text.strip():
-                        cell_data = {
-                            'text': cell.text.strip(),
-                            'bbox': {
-                                'left': cell.bbox.l,
-                                'top': cell.bbox.t,
-                                'right': cell.bbox.r,
-                                'bottom': cell.bbox.b
-                            },
-                            'font_size': getattr(cell, 'font_size', None),
-                            'font_name': getattr(cell, 'font_name', None)
-                        }
-                        page_data['cells'].append(cell_data)
-                
-                results.append(page_data)
+            # 创建文档转换器
+            doc_converter = DocumentProcessor._create_document_converter()
+            
+            # 转换文档
+            input_path = Path(file_path)
+            conv_results = doc_converter.convert_all(source=[input_path])
+            
+            for conv_result in conv_results:
+                if conv_result.status == ConversionStatus.SUCCESS:
+                    # 获取文档数据
+                    data = conv_result.document.export_to_dict()
+                    
+                    # 处理文本内容
+                    if 'texts' in data:
+                        for text_item in data['texts']:
+                            if 'text' in text_item and text_item['text'].strip():
+                                item_data = {
+                                    'text': text_item['text'].strip(),
+                                    'type': 'text'
+                                }
+                                
+                                # 添加位置信息
+                                if 'prov' in text_item and text_item['prov']:
+                                    prov = text_item['prov'][0]
+                                    item_data['page'] = prov.get('page_no')
+                                    if 'bbox' in prov:
+                                        item_data['bbox'] = {
+                                            'left': prov['bbox'].get('l'),
+                                            'top': prov['bbox'].get('t'),
+                                            'right': prov['bbox'].get('r'),
+                                            'bottom': prov['bbox'].get('b')
+                                        }
+                                
+                                # 添加字体信息
+                                if 'font_size' in text_item:
+                                    item_data['font_size'] = text_item['font_size']
+                                if 'font_name' in text_item:
+                                    item_data['font_name'] = text_item['font_name']
+                                
+                                results.append(item_data)
+                    
+                    logger.info(f"使用DocLing处理PDF文件布局，提取了 {len(results)} 个文本块")
+                    
+                else:
+                    logger.error(f"PDF文档转换失败: {conv_result.status}")
                     
         except Exception as e:
-            logger.info(f"使用DocLing提取PDF布局信息时出错: {str(e)}")
+            logger.error(f"使用DocLing处理PDF文件布局时出错: {str(e)}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            
         return results
 
     @staticmethod
-    def extract_text_from_pdf_in_region(file_path: str, bbox: BoundingBox, page_index: int = 0) -> str:
+    def extract_text_from_pdf_in_region(file_path: str, bbox: dict, page_index: int = 0) -> str:
         """从PDF文件的指定区域提取文本"""
         try:
-            doc_backend = DocumentProcessor._get_docling_backend(file_path)
-            page_backend = doc_backend.load_page(page_index)
+            logger.info(f"从PDF区域提取文本: {os.path.basename(file_path)}")
             
-            text = page_backend.get_text_in_rect(bbox=bbox)
-            return text.strip()
+            # 创建文档转换器
+            doc_converter = DocumentProcessor._create_document_converter()
+            
+            # 转换文档
+            input_path = Path(file_path)
+            conv_results = doc_converter.convert_all(source=[input_path])
+            
+            for conv_result in conv_results:
+                if conv_result.status == ConversionStatus.SUCCESS:
+                    # 获取文档数据
+                    data = conv_result.document.export_to_dict()
+                    
+                    # 查找指定页面和区域的文本
+                    if 'texts' in data:
+                        for text_item in data['texts']:
+                            if 'prov' in text_item and text_item['prov']:
+                                prov = text_item['prov'][0]
+                                if prov.get('page_no') == page_index:
+                                    # 检查文本是否在指定区域内
+                                    if 'bbox' in prov:
+                                        text_bbox = prov['bbox']
+                                        # 简单的区域重叠检查
+                                        if (text_bbox['l'] >= bbox['left'] and 
+                                            text_bbox['t'] >= bbox['top'] and
+                                            text_bbox['r'] <= bbox['right'] and
+                                            text_bbox['b'] <= bbox['bottom']):
+                                            if 'text' in text_item and text_item['text'].strip():
+                                                return text_item['text'].strip()
+                    
+                else:
+                    logger.error(f"PDF文档转换失败: {conv_result.status}")
+                    
         except Exception as e:
-            logger.info(f"从PDF区域提取文本时出错: {str(e)}")
-            return ""
+            logger.error(f"从PDF区域提取文本时出错: {str(e)}")
+            
+        return ""
 
     @staticmethod
     def extract_text_from_docx(file_path: str) -> List[str]:
@@ -206,7 +250,7 @@ class DocumentProcessor:
             
             # 验证提取结果
             if not texts:
-                logger.info("警告: DocLing没有提取到任何文本，尝试备用方法")
+                logger.warning("DocLing没有提取到任何文本")
                 raise Exception("DocLing提取结果为空")
             
             # 显示提取的文本示例
@@ -216,63 +260,10 @@ class DocumentProcessor:
                     logger.info(f"  {i+1}: {text[:100]}...")
             
         except Exception as e:
-            logger.info(f"使用DocLing处理Word文档时出错: {str(e)}")
-            # 如果DocLing失败，使用备用方法
-            try:
-                logger.info("尝试使用备用方法处理Word文档...")
-                texts = DocumentProcessor._extract_text_from_docx_fallback(file_path)
-                logger.info(f"备用方法成功，提取了 {len(texts)} 个文本块")
-            except Exception as fallback_error:
-                logger.info(f"备用Word文档处理方法也失败: {str(fallback_error)}")
-                texts = []
-        
-        return texts
-
-    @staticmethod
-    def _extract_text_from_docx_fallback(file_path: str) -> List[str]:
-        """Word文档处理的备用方法"""
-        texts = []
-        try:
-            logger.info(f"使用python-docx备用方法处理Word文档...")
-            doc = docx.Document(file_path)
-            
-            # 提取段落文本
-            paragraph_count = 0
-            for para in doc.paragraphs:
-                if para.text.strip():
-                    texts.append(para.text.strip())
-                    paragraph_count += 1
-            
-            logger.info(f"从段落中提取了 {paragraph_count} 个文本块")
-            
-            # 提取表格文本
-            table_count = 0
-            for table in doc.tables:
-                table_texts = []
-                for row in table.rows:
-                    row_texts = []
-                    for cell in row.cells:
-                        if cell.text.strip():
-                            row_texts.append(cell.text.strip())
-                    if row_texts:
-                        table_texts.append(" | ".join(row_texts))
-                if table_texts:
-                    texts.append("表格: " + " | ".join(table_texts))
-                    table_count += 1
-            
-            logger.info(f"从表格中提取了 {table_count} 个文本块")
-            logger.info(f"使用备用方法处理Word文档，总共提取了 {len(texts)} 个文本块")
-            
-            # 显示提取的文本示例
-            if texts:
-                logger.info("备用方法提取的文本示例:")
-                for i, text in enumerate(texts[:3]):
-                    logger.info(f"  {i+1}: {text[:100]}...")
-            
-        except Exception as e:
-            logger.info(f"备用Word文档处理方法出错: {str(e)}")
+            logger.error(f"使用DocLing处理Word文档时出错: {str(e)}")
             import traceback
-            logger.info(f"错误详情: {traceback.format_exc()}")
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            texts = []
         
         return texts
 
@@ -334,13 +325,9 @@ class DocumentProcessor:
             logger.info(f"使用DocLing处理Word文档，提取了 {len(results)} 个结构化文本块")
             
         except Exception as e:
-            logger.info(f"使用DocLing处理Word文档结构时出错: {str(e)}")
-            # 如果DocLing失败，返回简单的文本列表
-            try:
-                simple_texts = DocumentProcessor._extract_text_from_docx_fallback(file_path)
-                results = [{'text': text, 'type': 'text', 'level': None, 'metadata': {}} for text in simple_texts]
-            except Exception as fallback_error:
-                logger.info(f"备用Word文档处理方法也失败: {str(fallback_error)}")
+            logger.error(f"使用DocLing处理Word文档结构时出错: {str(e)}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
         return results
 
     @staticmethod
@@ -361,7 +348,7 @@ class DocumentProcessor:
                     if text:
                         texts.append(text)
         except Exception as e:
-            logger.info(f"处理Markdown文件时出错: {str(e)}")
+            logger.error(f"处理Markdown文件时出错: {str(e)}")
         return texts
 
     @staticmethod
@@ -380,7 +367,7 @@ class DocumentProcessor:
                 if slide_texts:
                     texts.append(" | ".join(slide_texts))  # 将同一页的文本合并
         except Exception as e:
-            logger.info(f"处理PowerPoint文件时出错: {str(e)}")
+            logger.error(f"处理PowerPoint文件时出错: {str(e)}")
         return texts
 
     @staticmethod
@@ -394,7 +381,7 @@ class DocumentProcessor:
                 paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
                 texts.extend(paragraphs)
         except Exception as e:
-            logger.info(f"处理文本文件时出错: {str(e)}")
+            logger.error(f"处理文本文件时出错: {str(e)}")
         return texts
 
     @staticmethod
