@@ -557,9 +557,9 @@
                                                 <strong>传统RAG系统</strong>
                                                 <span class="agent-status available" id="traditional-status">可用</span>
                                             </label>
-                    </div>
+                                        </div>
                                         <small class="text-muted">使用传统的检索增强生成技术</small>
-                </div>
+                                    </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="system-selector" id="autogen-rag" onclick="selectSystem('autogen')">
@@ -854,19 +854,12 @@
         async function askQuestion() {
             const input = document.getElementById('questionInput');
             const question = input.value.trim();
-            
             if (!question || isStreaming) return;
-            
-            // 添加用户消息
             addMessage('用户', question, 'user');
             input.value = '';
-            
-            // 根据当前系统选择API
             const apiEndpoint = currentSystem === 'traditional' ? '/ask_stream' : '/ask_stream_autogen';
-            
             try {
                 if (currentSystem === 'autogen') {
-                    // AutoGen系统需要传递快速模式参数
                     const fastMode = document.getElementById('fastModeSwitch').checked;
                     await streamQuestion(question, apiEndpoint, { fast_mode: fastMode });
                 } else {
@@ -1030,10 +1023,26 @@
                                         // 显示最终答案，使用markdown渲染
                                         answerDiv.className = 'message bot-message';
                                         const finalRenderedAnswer = renderMarkdown(answer);
-                                        answerDiv.innerHTML = `
+                                        
+                                        // 构建答案HTML，包含页面信息
+                                        let answerHTML = `
                                             <strong><i class="fas fa-robot"></i> 智能体系统:</strong>
                                             <div class="final-answer markdown-content">${finalRenderedAnswer}</div>
                                         `;
+                                        
+                                        // 如果有来源信息，也显示
+                                        if (data.sources && data.sources.length > 0) {
+                                            const uniqueSources = [...new Set(data.sources)];
+                                            answerHTML += `
+                                                <div class="source-info">
+                                                    <small class="text-muted">
+                                                        <i class="fas fa-database"></i> 来源文档: ${uniqueSources.join(', ')}
+                                                    </small>
+                                                </div>
+                                            `;
+                                        }
+                                        
+                                        answerDiv.innerHTML = answerHTML;
                                         break;
                                         
                                     case 'end':

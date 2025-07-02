@@ -200,7 +200,30 @@ def ask_question():
     try:
         context = rag_system.search_similar(question)
         context_text = "\n".join([hit["text"] for hit in context])
-        prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+        if context:
+            # 只显示文档名称，不显示页码
+            sources = list(set([hit["source"] for hit in context]))
+            sources_text = "、".join(sources)
+            prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+
+要求：
+1. 使用markdown格式回答
+2. 段落之间用空行分隔
+3. 重要信息用**粗体**标记
+4. 列表使用- 或1. 格式
+5. 代码用`代码`格式
+6. 回答要准确、完整、有条理
+7. 用中文回答，语言要自然流畅
+8. 在回答末尾标注信息来源的文档名称
+
+检索到的信息：
+{context_text}
+
+问题：{question}
+
+答案："""
+        else:
+            prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
 
 要求：
 1. 使用markdown格式回答
@@ -221,16 +244,16 @@ def ask_question():
             messages=[{'role': 'user', 'content': prompt}]
         )
         answer = response['message']['content']
-        
-        # 分离思考内容和正式回答
         think_content, answer_content = separate_think_and_answer(answer)
-        
-        return jsonify({
+        result = {
             'think_content': think_content,
             'answer': answer_content,
             'context': context_text[:500] + "..." if len(context_text) > 500 else context_text,
-            'sources': [hit["source"] for hit in context]
-        })
+            'sources': [hit["source"] for hit in context],
+            'pages': [hit.get("page", 0) for hit in context],
+            'return_parent_pages': True
+        }
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': f'生成答案时出错: {str(e)}'}), 500
 
@@ -240,22 +263,20 @@ def ask_question_autogen():
     global autogen_system
     if autogen_system is None:
         return jsonify({'error': 'AutoGen智能体系统未初始化'}), 500
-    
     data = request.get_json()
     question = data.get('question', '').strip()
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
-    
     try:
-        # 使用AutoGen智能体系统回答问题
         answer = autogen_system.answer_question(question)
-        
-        return jsonify({
+        result = {
             'answer': answer,
             'status': 'success',
             'framework': 'AutoGen',
-            'agents_involved': ['retrieval_agent', 'analysis_agent', 'answer_agent', 'coordinator']
-        })
+            'agents_involved': ['retrieval_agent', 'analysis_agent', 'answer_agent', 'coordinator'],
+            'return_parent_pages': True
+        }
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': f'AutoGen智能体协作失败: {str(e)}'}), 500
 
@@ -268,6 +289,7 @@ def ask_question_stream():
     
     data = request.get_json()
     question = data.get('question', '').strip()
+    
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
     
@@ -281,13 +303,42 @@ def ask_question_stream():
             context_text = "\n".join([hit["text"] for hit in context])
             
             # 构建思考过程
-            think_content = f"检索到的相关信息：\n{context_text[:300]}...\n\n基于检索结果，我将生成答案。"
+            if context:
+                # 只显示文档名称，不显示页码
+                sources = list(set([hit["source"] for hit in context]))
+                sources_text = "、".join(sources)
+                think_content = f"检索到的相关信息（来源文档：{sources_text}）：\n{context_text[:300]}...\n\n基于检索结果，我将生成答案。"
+            else:
+                think_content = f"检索到的相关信息：\n{context_text[:300]}...\n\n基于检索结果，我将生成答案。"
             
             # 发送思考过程
             yield f"data: {json.dumps({'type': 'think', 'content': think_content})}\n\n"
             
             # 构建提示词
-            prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+            if context:
+                # 只显示文档名称，不显示页码
+                sources = list(set([hit["source"] for hit in context]))
+                sources_text = "、".join(sources)
+                prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+
+要求：
+1. 使用markdown格式回答
+2. 段落之间用空行分隔
+3. 重要信息用**粗体**标记
+4. 列表使用- 或1. 格式
+5. 代码用`代码`格式
+6. 回答要准确、完整、有条理
+7. 用中文回答，语言要自然流畅
+8. 在回答末尾标注信息来源的文档名称
+
+检索到的信息：
+{context_text}
+
+问题：{question}
+
+答案："""
+            else:
+                prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
 
 要求：
 1. 使用markdown格式回答
@@ -321,8 +372,29 @@ def ask_question_stream():
                     # 发送回答内容
                     yield f"data: {json.dumps({'type': 'answer', 'content': content})}\n\n"
             
+            # 构建完成数据
+            complete_data = {
+                'type': 'complete', 
+                'answer': full_answer, 
+                'think': think_content,
+                'sources': [hit["source"] for hit in context]
+            }
+            
+            # 构建完成数据
+            complete_data = {
+                'type': 'complete',
+                'answer': full_answer,
+                'think': think_content,
+                'status': 'success',
+                'framework': 'AutoGen',
+                'agents_involved': ['retrieval_agent', 'analysis_agent', 'answer_agent', 'coordinator'],
+                'sources': [hit["source"] for hit in context],
+                'pages': [hit.get("page", 0) for hit in context],
+                'return_parent_pages': True
+            }
+            
             # 发送完成标记
-            yield f"data: {json.dumps({'type': 'complete', 'answer': full_answer, 'think': think_content})}\n\n"
+            yield f"data: {json.dumps(complete_data)}\n\n"
             
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -347,7 +419,8 @@ def ask_question_stream_autogen():
         try:
             # 发送开始标记
             mode_text = "快速模式" if fast_mode else "完整模式"
-            yield f"data: {json.dumps({'type': 'start', 'message': f'智能体开始协作（{mode_text}）...'})}\n\n"
+            page_text = "（启用父页面检索）" if return_parent_pages else ""
+            yield f"data: {json.dumps({'type': 'start', 'message': f'智能体开始协作（{mode_text}）{page_text}...'})}\n\n"
             
             # 发送检索智能体状态
             yield f"data: {json.dumps({'type': 'agent_status', 'agent': '检索智能体', 'message': '正在检索相关信息...'})}\n\n"
@@ -395,6 +468,7 @@ def ask_question_stream_autogen():
 5. 代码用`代码`格式
 6. 回答要准确、完整、有条理
 7. 用中文回答，语言要自然流畅
+8. 在回答末尾标注信息来源的文档名称
 
 检索到的信息：
 {context_text}
@@ -403,7 +477,7 @@ def ask_question_stream_autogen():
 
 答案："""
                 
-                # 使用流式输出，就像传统RAG系统一样
+                # 使用流式输出
                 stream = autogen_system.answer_agent.client.chat(
                     model='deepseek-r1:14b',
                     messages=[{'role': 'user', 'content': prompt}],
@@ -416,6 +490,7 @@ def ask_question_stream_autogen():
                 )
                 
                 full_answer = ""
+                
                 for chunk in stream:
                     if 'message' in chunk and 'content' in chunk['message']:
                         content = chunk['message']['content']

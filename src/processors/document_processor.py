@@ -1,10 +1,11 @@
 import os
-from typing import List
+from typing import List, Dict, Any
 from pathlib import Path
 import docx
 import markdown
 from bs4 import BeautifulSoup
 from pptx import Presentation
+import json
 
 # DocLing imports
 from docling.backend.docling_parse_v2_backend import DoclingParseV2DocumentBackend
@@ -41,6 +42,165 @@ class DocumentProcessor:
         }
         
         return DocumentConverter(format_options=format_options)
+
+    @staticmethod
+    def process_pdf_with_pages(file_path: str) -> Dict[str, Any]:
+        """处理PDF文件并保持页面信息，返回包含页面和chunks的结构化数据"""
+        try:
+            logger.info(f"开始处理PDF文件并保持页面信息: {os.path.basename(file_path)}")
+            
+            # 创建文档转换器
+            doc_converter = DocumentProcessor._create_document_converter()
+            
+            # 转换文档
+            input_path = Path(file_path)
+            conv_results = doc_converter.convert_all(source=[input_path])
+            
+            for conv_result in conv_results:
+                if conv_result.status == ConversionStatus.SUCCESS:
+                    # 获取文档数据
+                    data = conv_result.document.export_to_dict()
+                    
+                    # 处理文档内容，保持页面信息
+                    processed_data = DocumentProcessor._process_document_with_pages(data)
+                    
+                    logger.info(f"PDF文件处理完成，共 {len(processed_data.get('pages', []))} 页，{len(processed_data.get('chunks', []))} 个chunks")
+                    return processed_data
+                    
+                else:
+                    logger.error(f"PDF文档转换失败: {conv_result.status}")
+                    return {"pages": [], "chunks": []}
+                    
+        except Exception as e:
+            logger.error(f"处理PDF文件时出错: {str(e)}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            return {"pages": [], "chunks": []}
+
+    @staticmethod
+    def _process_document_with_pages(data: Dict[str, Any]) -> Dict[str, Any]:
+        """处理文档数据，提取页面和chunks信息"""
+        result = {
+            "pages": [],
+            "chunks": []
+        }
+        
+        # 添加调试日志，查看数据结构
+        logger.info(f"DocLing返回的数据结构: {list(data.keys())}")
+        
+        # 处理页面信息 - 尝试多种可能的数据结构
+        page_texts = {}
+        
+        # 方法1: 直接从texts字段提取，按页面分组
+        if 'texts' in data:
+            logger.info(f"找到texts字段，包含 {len(data['texts'])} 个文本项")
+            for text_item in data['texts']:
+                if 'text' in text_item and text_item['text'].strip():
+                    # 获取页面信息
+                    page_num = 0
+                    if 'prov' in text_item and text_item['prov']:
+                        prov = text_item['prov'][0]
+                        page_num = prov.get('page_no', 0)
+                    
+                    if page_num not in page_texts:
+                        page_texts[page_num] = ""
+                    page_texts[page_num] += text_item['text'].strip() + "\n"
+        
+        # 方法2: 如果content字段存在，按页面处理
+        elif 'content' in data:
+            logger.info(f"找到content字段，包含 {len(data['content'])} 个内容项")
+            for page_data in data['content']:
+                page_num = page_data.get('page', 0)
+                page_text = ""
+                
+                if 'texts' in page_data:
+                    for text_item in page_data['texts']:
+                        if 'text' in text_item and text_item['text'].strip():
+                            page_text += text_item['text'].strip() + "\n"
+                
+                if page_text.strip():
+                    page_texts[page_num] = page_text.strip()
+        
+        # 方法3: 如果pages字段存在
+        elif 'pages' in data:
+            logger.info(f"找到pages字段，包含 {len(data['pages'])} 页")
+            for page_data in data['pages']:
+                page_num = page_data.get('page_no', 0)
+                page_text = ""
+                
+                if 'texts' in page_data:
+                    for text_item in page_data['texts']:
+                        if 'text' in text_item and text_item['text'].strip():
+                            page_text += text_item['text'].strip() + "\n"
+                
+                if page_text.strip():
+                    page_texts[page_num] = page_text.strip()
+        
+        # 如果没有找到任何文本，尝试直接处理整个文档
+        if not page_texts:
+            logger.warning("未找到页面结构，尝试直接处理整个文档")
+            # 将所有文本合并为一个页面
+            all_text = ""
+            if 'texts' in data:
+                for text_item in data['texts']:
+                    if 'text' in text_item and text_item['text'].strip():
+                        all_text += text_item['text'].strip() + "\n"
+            
+            if all_text.strip():
+                page_texts[0] = all_text.strip()
+        
+        # 构建结果
+        for page_num, page_text in sorted(page_texts.items()):
+            if page_text.strip():
+                result["pages"].append({
+                    "page": page_num,
+                    "text": page_text.strip()
+                })
+                
+                # 分割页面文本为chunks
+                chunks = DocumentProcessor._split_page_text(page_text.strip(), page_num)
+                result["chunks"].extend(chunks)
+        
+        logger.info(f"处理完成，共提取 {len(result['pages'])} 页，{len(result['chunks'])} 个chunks")
+        return result
+
+    @staticmethod
+    def _split_page_text(text: str, page_num: int, chunk_size: int = 500, chunk_overlap: int = 50) -> List[Dict[str, Any]]:
+        """将页面文本分割为chunks，保持页面信息"""
+        chunks = []
+        
+        # 简单的文本分割（可以后续优化为更智能的分割）
+        words = text.split()
+        current_chunk = []
+        current_length = 0
+        
+        for word in words:
+            current_chunk.append(word)
+            current_length += len(word) + 1  # +1 for space
+            
+            if current_length >= chunk_size:
+                chunk_text = " ".join(current_chunk)
+                chunks.append({
+                    "page": page_num,
+                    "text": chunk_text,
+                    "length": len(chunk_text)
+                })
+                
+                # 保留重叠部分
+                overlap_words = current_chunk[-chunk_overlap//10:] if chunk_overlap > 0 else []
+                current_chunk = overlap_words
+                current_length = sum(len(word) + 1 for word in overlap_words)
+        
+        # 添加最后一个chunk
+        if current_chunk:
+            chunk_text = " ".join(current_chunk)
+            chunks.append({
+                "page": page_num,
+                "text": chunk_text,
+                "length": len(chunk_text)
+            })
+        
+        return chunks
 
     @staticmethod
     def extract_text_from_pdf(file_path: str) -> List[str]:

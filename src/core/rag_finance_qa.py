@@ -66,99 +66,124 @@ class FinanceRAGSystem:
             file_ext = os.path.splitext(file_path)[1].lower()
             logger.info(f"文件类型: {file_ext}")
 
-            # 提取文本
-            logger.info("开始提取文档文本...")
-            text_blocks = self.doc_processor.process_file(file_path)
-            logger.info(f"文档处理器返回了 {len(text_blocks)} 个文本块")
-            
-            if not text_blocks:
-                logger.info("提取的文本为空，无法添加到知识库")
-                return
-
-            # 将文本列表合并为单个字符串，然后重新分割
-            full_text = "\n\n".join(text_blocks)
-            logger.info(f"合并后的文本长度: {len(full_text)} 字符")
-
-            # 将文本分割成较小的块
-            logger.info("开始分割文本...")
-            text_blocks = self.text_utils.split_text(full_text)
-            logger.info(f"文本分割完成，共 {len(text_blocks)} 个块")
-
-            # 检查每个文本块是否已存在
-            logger.info("开始检查重复内容...")
-            new_texts = []
-            duplicate_count = 0
-            
-            for i, block in enumerate(text_blocks):
-                if not block.strip():
-                    continue
+            if file_ext == '.pdf':
+                # 使用新的PDF处理方法，保持页面信息
+                logger.info("使用PDF页面处理方法...")
+                processed_data = self.doc_processor.process_pdf_with_pages(file_path)
                 
-                logger.info(f"检查第 {i+1}/{len(text_blocks)} 个文本块...")
+                if not processed_data or not processed_data.get('chunks'):
+                    logger.info("PDF处理结果为空，无法添加到知识库")
+                    return
                 
-                # 检查相似性
-                try:
-                    query_embedding = self.text_utils.generate_embeddings([block])[0]
-                    similar_texts = self.vector_store.search(query_embedding, top_k=1)
-                    
-                    if similar_texts and self.text_utils.calculate_similarity(block, similar_texts[0]["text"]) > 0.8:
-                        logger.info(f"跳过相似内容: {block[:100]}...")
-                        duplicate_count += 1
+                # 添加带页面信息的chunks到向量数据库
+                logger.info(f"准备添加 {len(processed_data['chunks'])} 个带页面信息的chunks")
+                success = self.vector_store.add_texts_with_pages(
+                    texts=processed_data['chunks'],
+                    source=os.path.basename(file_path)
+                )
+                
+                if success:
+                    logger.info(f"成功添加PDF文档，共 {len(processed_data['chunks'])} 个chunks，{len(processed_data['pages'])} 页")
+                    # 获取更新后的统计信息
+                    collection_stats = self.vector_store.get_collection_stats()
+                    logger.info(f"知识库统计: {collection_stats}")
+                else:
+                    logger.info("添加PDF文档失败")
+                
+            else:
+                # 对于非PDF文件，使用原有方法
+                logger.info("使用原有文档处理方法...")
+                text_blocks = self.doc_processor.process_file(file_path)
+                logger.info(f"文档处理器返回了 {len(text_blocks)} 个文本块")
+                
+                if not text_blocks:
+                    logger.info("提取的文本为空，无法添加到知识库")
+                    return
+
+                # 将文本列表合并为单个字符串，然后重新分割
+                full_text = "\n\n".join(text_blocks)
+                logger.info(f"合并后的文本长度: {len(full_text)} 字符")
+
+                # 将文本分割成较小的块
+                logger.info("开始分割文本...")
+                text_blocks = self.text_utils.split_text(full_text)
+                logger.info(f"文本分割完成，共 {len(text_blocks)} 个块")
+
+                # 检查每个文本块是否已存在
+                logger.info("开始检查重复内容...")
+                new_texts = []
+                duplicate_count = 0
+                
+                for i, block in enumerate(text_blocks):
+                    if not block.strip():
                         continue
                     
-                    new_texts.append({
-                        "text": block,
-                        "source": os.path.basename(file_path),
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    })
-                    logger.info(f"添加新文本块: {block[:100]}...")
+                    logger.info(f"检查第 {i+1}/{len(text_blocks)} 个文本块...")
+                    
+                    # 检查相似性
+                    try:
+                        query_embedding = self.text_utils.generate_embeddings([block])[0]
+                        similar_texts = self.vector_store.search(query_embedding, top_k=1)
+                        
+                        if similar_texts and self.text_utils.calculate_similarity(block, similar_texts[0]["text"]) > 0.8:
+                            logger.info(f"跳过相似内容: {block[:100]}...")
+                            duplicate_count += 1
+                            continue
+                        
+                        new_texts.append({
+                            "text": block,
+                            "source": os.path.basename(file_path),
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                        logger.info(f"添加新文本块: {block[:100]}...")
+                        
+                    except Exception as e:
+                        logger.info(f"检查文本块时出错: {str(e)}")
+                        # 如果检查失败，直接添加
+                        new_texts.append({
+                            "text": block,
+                            "source": os.path.basename(file_path),
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
+
+                logger.info(f"重复检查完成: 跳过 {duplicate_count} 个重复内容，新增 {len(new_texts)} 个文本块")
+
+                if not new_texts:
+                    logger.info("所有内容都已存在于知识库中")
+                    return
+
+                logger.info(f"准备添加 {len(new_texts)} 个新文本块到数据库")
+
+                # 为新的文本生成嵌入向量
+                try:
+                    logger.info("开始生成嵌入向量...")
+                    embeddings = self.text_utils.generate_embeddings([item["text"] for item in new_texts])
+                    logger.info(f"成功生成 {len(embeddings)} 个嵌入向量")
+                except Exception as e:
+                    logger.info(f"生成嵌入向量时出错: {str(e)}")
+                    return
+
+                # 准备插入数据
+                texts = [item["text"] for item in new_texts]
+                embedding_list = embeddings.tolist()
+                sources = [item["source"] for item in new_texts]
+                timestamps = [item["timestamp"] for item in new_texts]
+
+                # 插入数据到向量数据库
+                try:
+                    logger.info("开始插入数据到向量数据库...")
+                    self.vector_store.insert_data(texts, embedding_list, sources, timestamps)
+                    logger.info(f"成功添加 {len(new_texts)} 条新知识到数据库")
+                    
+                    # 获取更新后的统计信息
+                    collection_stats = self.vector_store.get_collection_stats()
+                    logger.info(f"知识库统计: {collection_stats}")
                     
                 except Exception as e:
-                    logger.info(f"检查文本块时出错: {str(e)}")
-                    # 如果检查失败，直接添加
-                    new_texts.append({
-                        "text": block,
-                        "source": os.path.basename(file_path),
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    })
-
-            logger.info(f"重复检查完成: 跳过 {duplicate_count} 个重复内容，新增 {len(new_texts)} 个文本块")
-
-            if not new_texts:
-                logger.info("所有内容都已存在于知识库中")
-                return
-
-            logger.info(f"准备添加 {len(new_texts)} 个新文本块到数据库")
-
-            # 为新的文本生成嵌入向量
-            try:
-                logger.info("开始生成嵌入向量...")
-                embeddings = self.text_utils.generate_embeddings([item["text"] for item in new_texts])
-                logger.info(f"成功生成 {len(embeddings)} 个嵌入向量")
-            except Exception as e:
-                logger.info(f"生成嵌入向量时出错: {str(e)}")
-                return
-
-            # 准备插入数据
-            texts = [item["text"] for item in new_texts]
-            embedding_list = embeddings.tolist()
-            sources = [item["source"] for item in new_texts]
-            timestamps = [item["timestamp"] for item in new_texts]
-
-            # 插入数据到向量数据库
-            try:
-                logger.info("开始插入数据到向量数据库...")
-                self.vector_store.insert_data(texts, embedding_list, sources, timestamps)
-                logger.info(f"成功添加 {len(new_texts)} 条新知识到数据库")
-                
-                # 获取更新后的统计信息
-                collection_stats = self.vector_store.get_collection_stats()
-                logger.info(f"知识库统计: {collection_stats}")
-                
-            except Exception as e:
-                logger.info(f"插入数据到数据库时出错: {str(e)}")
-                import traceback
-                logger.info(f"错误详情: {traceback.format_exc()}")
-                return
+                    logger.info(f"插入数据到数据库时出错: {str(e)}")
+                    import traceback
+                    logger.info(f"错误详情: {traceback.format_exc()}")
+                    return
 
             logger.info(f"=== 文档处理完成: {file_path} ===")
 
@@ -204,49 +229,75 @@ class FinanceRAGSystem:
         self.vector_store.insert_data(texts, embedding_list, sources, timestamps)
         print_success(f"成功添加 {len(new_texts)} 条新知识到数据库")
 
-    def search_similar(self, query_text: str, top_k: int = 5) -> List[Dict]:
-        """搜索相似文本"""
+    def search_similar(self, query_text: str, top_k: int = 20) -> List[Dict]:
+        """搜索相似文本，父页面检索默认开启"""
         try:
-            # 生成查询文本的向量
             query_embedding = self.text_utils.generate_embeddings([query_text])[0]
-            
-            # 执行搜索
-            results = self.vector_store.search(query_embedding, top_k)
+            results = self.vector_store.search(query_embedding, top_k, return_parent_pages=True)
             return results
         except Exception as e:
             print_error(f"搜索相似文本时出错: {str(e)}")
             return []
 
     def answer_question(self, question: str) -> str:
-        """回答问题"""
+        """回答问题，父页面检索默认开启"""
         max_retries = 3
         retry_delay = 2
-        
         for attempt in range(max_retries):
             try:
-                # 搜索相关上下文
                 context = self.search_similar(question)
                 context_text = "\n".join([hit["text"] for hit in context])
-                
-                # 构建提示
-                prompt = f"请结合以下检索到的内容和你自己的知识，回答用户问题：\n\n上下文：\n{context_text}\n\n问题：{question}\n\n答案："
-                
-                # 使用流式输出
+                if context:
+                    # 只显示文档名称，不显示页码
+                    sources = list(set([hit["source"] for hit in context]))
+                    sources_text = "、".join(sources)
+                    prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+
+要求：
+1. 使用markdown格式回答
+2. 段落之间用空行分隔
+3. 重要信息用**粗体**标记
+4. 列表使用- 或1. 格式
+5. 代码用`代码`格式
+6. 回答要准确、完整、有条理
+7. 用中文回答，语言要自然流畅
+8. 在回答末尾标注信息来源的文档名称
+
+检索到的信息：
+{context_text}
+
+问题：{question}
+
+答案："""
+                else:
+                    prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+
+要求：
+1. 使用markdown格式回答
+2. 段落之间用空行分隔
+3. 重要信息用**粗体**标记
+4. 列表使用- 或1. 格式
+5. 代码用`代码`格式
+6. 回答要准确、完整、有条理
+
+上下文：
+{context_text}
+
+问题：{question}
+
+答案："""
                 stream = self.ollama_client.chat(
                     model='deepseek-r1:14b',
                     messages=[{'role': 'user', 'content': prompt}],
                     stream=True
                 )
-                
-                # 实时打印响应内容，使用打字机效果
                 for chunk in stream:
                     if 'message' in chunk and 'content' in chunk['message']:
                         content = chunk['message']['content']
-                        # 跳过思考过程
                         if content.startswith('<think>'):
                             continue
                         typewriter_print(content)
-                print("\n" + "=" * 80)  # 打印结束分隔线
+                print("\n" + "=" * 80)
                 return "回答完成"
             except Exception as e:
                 print_error(f"尝试第 {attempt+1} 次回答问题时出错: {str(e)}")

@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Any
 from pymilvus import connections, Collection, CollectionSchema, FieldSchema, DataType, utility
 from datetime import datetime
 import os
@@ -67,7 +67,7 @@ class VectorStore:
                 # 获取现有字段
                 fields = [field.name for field in collection.schema.fields]
                 # 检查是否需要更新
-                if not all(field in fields for field in ['source', 'timestamp']):
+                if not all(field in fields for field in ['source', 'timestamp', 'page']):
                     logger.info("检测到集合模式需要更新，正在重新创建...")
                     # 删除旧集合
                     utility.drop_collection(self.collection_name)
@@ -97,7 +97,8 @@ class VectorStore:
             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=384),
             FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=256),
-            FieldSchema(name="timestamp", dtype=DataType.VARCHAR, max_length=32)
+            FieldSchema(name="timestamp", dtype=DataType.VARCHAR, max_length=32),
+            FieldSchema(name="page", dtype=DataType.INT64)  # 添加页面字段
         ]
         
         # 创建集合模式
@@ -143,9 +144,10 @@ class VectorStore:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             timestamps = [timestamp] * len(texts)
             sources = [source] * len(texts)
+            pages = [0] * len(texts)  # 默认页面为0
             
             # 插入数据
-            self.insert_data(texts, embeddings_list, sources, timestamps)
+            self.insert_data(texts, embeddings_list, sources, timestamps, pages)
             
             logger.info(f"成功添加 {len(texts)} 个文本到向量数据库")
             return True
@@ -153,13 +155,55 @@ class VectorStore:
         except Exception as e:
             logger.info(f"添加文本时出错: {str(e)}")
             return False
+
+    def add_texts_with_pages(self, texts: List[Dict[str, Any]], source: str = "unknown") -> bool:
+        """添加带页面信息的文本到向量数据库
+        
+        Args:
+            texts: 包含页面信息的文本字典列表，每个字典包含 'text' 和 'page' 字段
+            source: 来源信息
+            
+        Returns:
+            是否成功添加
+        """
+        try:
+            logger.info(f"开始添加 {len(texts)} 个带页面信息的文本到向量数据库...")
+            
+            if not texts:
+                logger.info("文本列表为空，跳过添加")
+                return True
+            
+            # 提取文本和页面信息
+            text_list = [item['text'] for item in texts]
+            pages = [item.get('page', 0) for item in texts]
+            
+            # 生成嵌入向量
+            logger.info("正在生成嵌入向量...")
+            embeddings = self.embedding_model.encode(text_list)
+            embeddings_list = embeddings.tolist()
+            
+            # 生成时间戳
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            timestamps = [timestamp] * len(texts)
+            sources = [source] * len(texts)
+            
+            # 插入数据
+            self.insert_data(text_list, embeddings_list, sources, timestamps, pages)
+            
+            logger.info(f"成功添加 {len(texts)} 个带页面信息的文本到向量数据库")
+            return True
+            
+        except Exception as e:
+            logger.info(f"添加带页面信息的文本时出错: {str(e)}")
+            return False
     
-    def search_similar(self, query_text: str, top_k: int = 5) -> List[Dict]:
+    def search_similar(self, query_text: str, top_k: int = 20, return_parent_pages: bool = False) -> List[Dict]:
         """搜索相似文本
         
         Args:
             query_text: 查询文本
             top_k: 返回结果数量
+            return_parent_pages: 是否返回父页面而不是chunks
             
         Returns:
             搜索结果列表
@@ -171,7 +215,7 @@ class VectorStore:
             query_embedding = self.embedding_model.encode([query_text])[0]
             
             # 执行搜索
-            results = self.search(query_embedding, top_k)
+            results = self.search(query_embedding, top_k, return_parent_pages)
             
             logger.info(f"搜索完成，找到 {len(results)} 个结果")
             return results
@@ -180,7 +224,7 @@ class VectorStore:
             logger.info(f"搜索相似文本时出错: {str(e)}")
             return []
     
-    def insert_data(self, texts: List[str], embeddings: List[List[float]], sources: List[str], timestamps: List[str]):
+    def insert_data(self, texts: List[str], embeddings: List[List[float]], sources: List[str], timestamps: List[str], pages: List[int] = None):
         """插入数据到向量数据库
         
         Args:
@@ -188,61 +232,85 @@ class VectorStore:
             embeddings: 嵌入向量列表
             sources: 来源列表
             timestamps: 时间戳列表
+            pages: 页面列表
         """
         try:
             logger.info(f"开始插入 {len(texts)} 条数据到向量数据库...")
+            
+            # 如果没有提供页面信息，使用默认值
+            if pages is None:
+                pages = [0] * len(texts)
             
             # 准备插入数据
             entities = [
                 texts,  # text
                 embeddings,  # embedding
                 sources,  # source
-                timestamps  # timestamp
+                timestamps,  # timestamp
+                pages  # page
             ]
             
             # 插入数据
             self.collection.insert(entities)
+            
+            # 立即刷新集合以确保数据持久化
             self.collection.flush()
+            
             logger.info(f"成功插入 {len(texts)} 条数据到向量数据库")
+            
         except Exception as e:
-            logger.info(f"插入数据时出错: {str(e)}")
+            logger.error(f"插入数据时出错: {str(e)}")
             import traceback
-            logger.info(f"错误详情: {traceback.format_exc()}")
-            raise
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            raise e
     
-    def search(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Dict]:
+    def search(self, query_embedding: np.ndarray, top_k: int = 20, return_parent_pages: bool = False) -> List[Dict]:
         """搜索相似向量
         
         Args:
             query_embedding: 查询向量
             top_k: 返回结果数量
+            return_parent_pages: 是否返回父页面而不是chunks
             
         Returns:
             搜索结果列表
         """
         try:
+            # 执行搜索
             search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
             results = self.collection.search(
                 data=[query_embedding.tolist()],
                 anns_field="embedding",
                 param=search_params,
                 limit=top_k,
-                output_fields=["text", "source", "timestamp"]
+                output_fields=["text", "source", "timestamp", "page"]
             )
             
-            # 格式化结果
-            formatted_results = []
+            # 处理搜索结果
+            search_results = []
+            seen_pages = set()  # 用于去重页面
+            
             for hits in results:
                 for hit in hits:
-                    formatted_results.append({
-                        "id": hit.id,
-                        "text": hit.entity.get("text"),
-                        "source": hit.entity.get("source"),
-                        "timestamp": hit.entity.get("timestamp"),
-                        "score": hit.distance
-                    })
+                    result = {
+                        "distance": float(hit.distance),
+                        "text": hit.entity.get("text", ""),
+                        "source": hit.entity.get("source", ""),
+                        "timestamp": hit.entity.get("timestamp", ""),
+                        "page": hit.entity.get("page", 0)
+                    }
+                    
+                    if return_parent_pages:
+                        # 如果返回父页面，需要去重
+                        page = result["page"]
+                        if page not in seen_pages:
+                            seen_pages.add(page)
+                            search_results.append(result)
+                    else:
+                        search_results.append(result)
             
-            return formatted_results
+            return search_results
+            
         except Exception as e:
             logger.info(f"搜索时出错: {str(e)}")
             return []
@@ -268,13 +336,23 @@ class VectorStore:
         """
         try:
             if self.collection:
-                # 使用 num_entities 替代 get_statistics
+                # 刷新集合以确保获取最新数据
+                self.collection.flush()
+                
+                # 使用 num_entities 获取实体数量
                 row_count = self.collection.num_entities
+                
+                # 添加调试日志
+                logger.info(f"集合 {self.collection_name} 当前实体数量: {row_count}")
+                
                 return {
                     "total_documents": row_count,
                     "total_vectors": row_count,
                     "collection_name": self.collection_name
                 }
         except Exception as e:
-            logger.info(f"获取集合统计信息时出错: {str(e)}")
+            logger.error(f"获取集合统计信息时出错: {str(e)}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+        
         return {"total_documents": 0, "total_vectors": 0, "collection_name": self.collection_name} 
