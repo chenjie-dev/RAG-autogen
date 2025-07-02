@@ -4,7 +4,8 @@ from datetime import datetime
 import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from utils.logger import logger
+from src.utils.logger import logger
+from src.utils.reranker import LLMReranker
 
 class VectorStore:
     """向量数据库管理类"""
@@ -27,6 +28,15 @@ class VectorStore:
         logger.info("正在初始化文本嵌入模型...")
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         logger.info("文本嵌入模型初始化完成")
+        
+        # 初始化LLM重排序器（可选，失败时不影响基本功能）
+        logger.info("正在初始化LLM重排序器...")
+        try:
+            self.reranker = LLMReranker()
+            logger.info("LLM重排序器初始化完成")
+        except Exception as e:
+            logger.warning(f"LLM重排序器初始化失败，将禁用重排序功能: {str(e)}")
+            self.reranker = None
         
         logger.info(f"正在连接到Milvus: {self.host}:{self.port}")
         
@@ -197,13 +207,15 @@ class VectorStore:
             logger.info(f"添加带页面信息的文本时出错: {str(e)}")
             return False
     
-    def search_similar(self, query_text: str, top_k: int = 20, return_parent_pages: bool = False) -> List[Dict]:
+    def search_similar(self, query_text: str, top_k: int = 20, return_parent_pages: bool = False, use_reranking: bool = True, llm_weight: float = 0.7) -> List[Dict]:
         """搜索相似文本
         
         Args:
             query_text: 查询文本
             top_k: 返回结果数量
             return_parent_pages: 是否返回父页面而不是chunks
+            use_reranking: 是否使用LLM重排序
+            llm_weight: LLM重排序权重 (0-1)
             
         Returns:
             搜索结果列表
@@ -217,11 +229,43 @@ class VectorStore:
             # 执行搜索
             results = self.search(query_embedding, top_k, return_parent_pages)
             
+            # 如果启用重排序，对结果进行重新排序
+            if use_reranking and results and self.reranker:
+                logger.info("启用LLM重排序...")
+                try:
+                    # 增加初始检索数量以获得更好的重排序效果
+                    initial_top_k = min(top_k * 2, 50)  # 最多检索50个
+                    if len(results) < initial_top_k:
+                        # 如果结果不够，重新检索更多
+                        more_results = self.search(query_embedding, initial_top_k, return_parent_pages)
+                        results = more_results
+                    
+                    # 执行重排序
+                    reranked_results = self.reranker.rerank_documents(
+                        query=query_text,
+                        documents=results,
+                        documents_batch_size=4,
+                        llm_weight=llm_weight
+                    )
+                    
+                    # 返回重排序后的前top_k个结果
+                    results = reranked_results[:top_k]
+                    logger.info(f"重排序完成，返回前 {len(results)} 个结果")
+                except Exception as e:
+                    logger.warning(f"重排序过程中出错，使用原始搜索结果: {str(e)}")
+                    # 如果重排序失败，使用原始结果
+                    results = results[:top_k]
+            else:
+                if not self.reranker:
+                    logger.info("重排序器未初始化，跳过LLM重排序")
+                else:
+                    logger.info("跳过LLM重排序")
+            
             logger.info(f"搜索完成，找到 {len(results)} 个结果")
             return results
             
         except Exception as e:
-            logger.info(f"搜索相似文本时出错: {str(e)}")
+            logger.error(f"搜索相似文本时出错: {str(e)}")
             return []
     
     def insert_data(self, texts: List[str], embeddings: List[List[float]], sources: List[str], timestamps: List[str], pages: List[int] = None):

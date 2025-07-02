@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 import time
 import ollama
@@ -7,11 +7,11 @@ import sys
 from datetime import datetime
 
 # 导入自定义模块
-from processors.document_processor import DocumentProcessor
-from utils.text_utils import TextUtils
-from utils.vector_store import VectorStore
-from utils.ui_utils import print_section, typewriter_print, print_info, print_warning, print_success, print_error
-from utils.logger import logger
+from src.processors.document_processor import DocumentProcessor
+from src.utils.text_utils import TextUtils
+from src.utils.vector_store import VectorStore
+from src.utils.ui_utils import print_section, typewriter_print, print_info, print_warning, print_success, print_error
+from src.utils.logger import logger
 
 # 导入配置
 from config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL
@@ -229,80 +229,89 @@ class FinanceRAGSystem:
         self.vector_store.insert_data(texts, embedding_list, sources, timestamps)
         print_success(f"成功添加 {len(new_texts)} 条新知识到数据库")
 
-    def search_similar(self, query_text: str, top_k: int = 20) -> List[Dict]:
+    def search_similar(self, query_text: str, top_k: int = 20, use_reranking: bool = True, llm_weight: float = 0.7) -> List[Dict]:
         """搜索相似文本，父页面检索默认开启"""
         try:
-            query_embedding = self.text_utils.generate_embeddings([query_text])[0]
-            results = self.vector_store.search(query_embedding, top_k, return_parent_pages=True)
+            # 直接使用vector_store的search_similar方法，它会处理重排序
+            results = self.vector_store.search_similar(query_text, top_k, return_parent_pages=True, use_reranking=use_reranking, llm_weight=llm_weight)
             return results
         except Exception as e:
             print_error(f"搜索相似文本时出错: {str(e)}")
             return []
 
-    def answer_question(self, question: str) -> str:
+    def answer_question(self, question: str, use_reranking: bool = True, llm_weight: float = 0.7) -> Dict[str, Any]:
         """回答问题，父页面检索默认开启"""
-        max_retries = 3
-        retry_delay = 2
-        for attempt in range(max_retries):
-            try:
-                context = self.search_similar(question)
-                context_text = "\n".join([hit["text"] for hit in context])
-                if context:
-                    # 只显示文档名称，不显示页码
-                    sources = list(set([hit["source"] for hit in context]))
-                    sources_text = "、".join(sources)
-                    prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+        try:
+            logger.info(f"开始处理问题: {question}")
+            
+            # 搜索相关文档
+            similar_docs = self.search_similar(question, use_reranking=use_reranking, llm_weight=llm_weight)
+            
+            if not similar_docs:
+                logger.warning("未找到相关文档")
+                return {
+                    "answer": "抱歉，我在文档中没有找到与您问题相关的信息。",
+                    "context": [],
+                    "sources": []
+                }
+            
+            # 构建上下文
+            context_parts = []
+            sources = []
+            
+            for i, doc in enumerate(similar_docs[:5]):  # 只使用前5个最相关的文档
+                context_parts.append(f"文档片段 {i+1}:\n{doc['text']}")
+                sources.append(doc.get('source', doc.get('document_name', '未知文档')))
+            
+            context = "\n\n".join(context_parts)
+            
+            # 构建用户提示词
+            user_prompt = f"""基于以下文档内容，请回答用户的问题：
 
-要求：
-1. 使用markdown格式回答
-2. 段落之间用空行分隔
-3. 重要信息用**粗体**标记
-4. 列表使用- 或1. 格式
-5. 代码用`代码`格式
-6. 回答要准确、完整、有条理
-7. 用中文回答，语言要自然流畅
-8. 在回答末尾标注信息来源的文档名称
+文档内容：
+{context}
 
-检索到的信息：
-{context_text}
+用户问题：{question}
 
-问题：{question}
+请提供详细的分析过程和准确的答案。如果文档中没有相关信息，请明确说明。"""
 
-答案："""
-                else:
-                    prompt = f"""请结合以下检索到的内容和你自己的知识，回答用户问题。
+            # 调用LLM生成答案
+            logger.info("正在生成答案...")
+            response = self.ollama_client.chat(
+                model='deepseek-r1:14b',
+                messages=[
+                    {"role": "system", "content": """你是一个专业的金融分析师助手，专门回答基于上传文档的金融相关问题。
 
-要求：
-1. 使用markdown格式回答
-2. 段落之间用空行分隔
-3. 重要信息用**粗体**标记
-4. 列表使用- 或1. 格式
-5. 代码用`代码`格式
-6. 回答要准确、完整、有条理
+你的任务是根据提供的文档内容，准确回答用户的问题。请遵循以下原则：
 
-上下文：
-{context_text}
+1. **严格基于文档内容**：只使用提供的文档内容来回答问题，不要使用外部知识
+2. **准确引用**：在回答中明确指出信息来源的文档名称
+3. **详细分析**：提供详细的分析过程，解释如何从文档中得出答案
+4. **诚实回答**：如果文档中没有相关信息，请明确说明"根据提供的文档，无法找到相关信息"
+5. **保持客观**：保持客观中立的分析态度，避免主观判断
 
-问题：{question}
-
-答案："""
-                stream = self.ollama_client.chat(
-                    model='deepseek-r1:14b',
-                    messages=[{'role': 'user', 'content': prompt}],
-                    stream=True
-                )
-                for chunk in stream:
-                    if 'message' in chunk and 'content' in chunk['message']:
-                        content = chunk['message']['content']
-                        if content.startswith('<think>'):
-                            continue
-                        typewriter_print(content)
-                print("\n" + "=" * 80)
-                return "回答完成"
-            except Exception as e:
-                print_error(f"尝试第 {attempt+1} 次回答问题时出错: {str(e)}")
-                time.sleep(retry_delay)
-        return "多次尝试后仍未能生成答案。"
+请确保你的回答准确、详细且基于文档内容。"""},
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+            
+            answer = response['message']['content']
+            
+            logger.info("答案生成完成")
+            
+            return {
+                "answer": answer,
+                "context": similar_docs[:5],  # 返回前5个最相关的文档
+                "sources": list(set(sources))  # 去重的文档来源
+            }
+            
+        except Exception as e:
+            logger.error(f"回答问题时出错: {str(e)}")
+            return {
+                "answer": f"抱歉，处理您的问题时出现了错误: {str(e)}",
+                "context": [],
+                "sources": []
+            }
 
     def clear_knowledge_base(self):
         """清空知识库"""
@@ -349,7 +358,14 @@ def main():
             
             # 回答问题
             print_info("正在思考...")
-            rag_system.answer_question(question)
+            result = rag_system.answer_question(question)
+            
+            # 打印结果
+            print("\n" + "=" * 80)
+            print(f"答案: {result['answer']}")
+            print(f"上下文: {result['context']}")
+            print(f"来源: {result['sources']}")
+            print("\n" + "=" * 80)
             
     except Exception as e:
         print_error(f"系统运行出错: {str(e)}")

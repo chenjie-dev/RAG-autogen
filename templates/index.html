@@ -193,6 +193,27 @@
             color: #721c24;
         }
         
+        /* 重排序控制样式 */
+        .reranking-controls {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            border: 2px solid #e9ecef;
+        }
+        .reranking-controls h6 {
+            color: #495057;
+            margin-bottom: 15px;
+        }
+        .slider-container {
+            margin-top: 10px;
+        }
+        .form-range::-webkit-slider-thumb {
+            background: #667eea;
+        }
+        .form-range::-moz-range-thumb {
+            background: #667eea;
+        }
+        
         /* Markdown样式 */
         .markdown-content h1, .markdown-content h2, .markdown-content h3, 
         .markdown-content h4, .markdown-content h5, .markdown-content h6 {
@@ -675,6 +696,29 @@
                             <span id="currentSystem" class="badge bg-secondary ms-2">传统RAG</span>
                         </div>
                         <div class="card-body">
+                            <!-- 重排序控制面板 -->
+                            <div class="reranking-controls mb-3">
+                                <h6><i class="fas fa-cogs"></i> 重排序设置</h6>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="useReranking" checked>
+                                            <label class="form-check-label" for="useReranking">
+                                                启用LLM重排序（提高答案准确性）
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="slider-container">
+                                            <label class="form-label">LLM权重: <span id="llmWeightValue">0.7</span></label>
+                                            <input type="range" class="form-range" id="llmWeightSlider" 
+                                                   min="0" max="1" step="0.1" value="0.7">
+                                            <small class="text-muted">权重越高，LLM重排序的影响越大</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="chat-container" id="chatContainer">
                                 <div class="message bot-message">
                                     <i class="fas fa-robot"></i> 欢迎使用金融知识RAG问答系统！请选择系统模式并开始提问。
@@ -705,6 +749,7 @@
             loadSystemInfo();
             loadStats();
             setupFileUpload();
+            setupRerankingControls();
             
             // 定期刷新统计信息
             setInterval(loadStats, 10000);
@@ -762,6 +807,17 @@
             } catch (error) {
                 console.error('加载统计信息失败:', error);
             }
+        }
+
+        // 设置重排序控制
+        function setupRerankingControls() {
+            const llmWeightSlider = document.getElementById('llmWeightSlider');
+            const llmWeightValue = document.getElementById('llmWeightValue');
+            
+            // 更新权重显示
+            llmWeightSlider.addEventListener('input', function() {
+                llmWeightValue.textContent = this.value;
+            });
         }
 
         // 设置文件上传
@@ -857,13 +913,25 @@
             if (!question || isStreaming) return;
             addMessage('用户', question, 'user');
             input.value = '';
+            
+            // 获取重排序设置
+            const useReranking = document.getElementById('useReranking').checked;
+            const llmWeight = parseFloat(document.getElementById('llmWeightSlider').value);
+            
             const apiEndpoint = currentSystem === 'traditional' ? '/ask_stream' : '/ask_stream_autogen';
             try {
                 if (currentSystem === 'autogen') {
                     const fastMode = document.getElementById('fastModeSwitch').checked;
-                    await streamQuestion(question, apiEndpoint, { fast_mode: fastMode });
+                    await streamQuestion(question, apiEndpoint, { 
+                        fast_mode: fastMode,
+                        use_reranking: useReranking,
+                        llm_weight: llmWeight
+                    });
                 } else {
-                    await streamQuestion(question, apiEndpoint);
+                    await streamQuestion(question, apiEndpoint, {
+                        use_reranking: useReranking,
+                        llm_weight: llmWeight
+                    });
                 }
             } catch (error) {
                 addMessage('系统', '回答失败: ' + error.message, 'bot');

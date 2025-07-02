@@ -30,11 +30,11 @@ import ollama
 from dotenv import load_dotenv
 
 # 导入现有模块
-from processors.document_processor import DocumentProcessor
-from utils.text_utils import TextUtils
-from utils.vector_store import VectorStore
-from utils.ui_utils import print_info, print_warning, print_success, print_error
-from utils.logger import logger
+from src.processors.document_processor import DocumentProcessor
+from src.utils.text_utils import TextUtils
+from src.utils.vector_store import VectorStore
+from src.utils.ui_utils import print_info, print_warning, print_success, print_error
+from src.utils.logger import logger
 
 # 导入配置
 from config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL
@@ -324,171 +324,375 @@ class AutoGenRAGSystem:
             print_error(f"搜索失败: {str(e)}")
             return []
 
-    async def answer_question_async(self, question: str, fast_mode: bool = True) -> Dict[str, Any]:
+    def search_knowledge_base(self, query: str, top_k: int = 20, use_reranking: bool = True, llm_weight: float = 0.7) -> List[Dict]:
+        """搜索知识库
+        
+        Args:
+            query: 查询文本
+            top_k: 返回结果数量
+            use_reranking: 是否使用LLM重排序
+            llm_weight: LLM重排序权重
+            
+        Returns:
+            搜索结果列表
+        """
+        try:
+            logger.info(f"搜索知识库: {query[:50]}...")
+            results = self.vector_store.search_similar(
+                query, 
+                top_k=top_k, 
+                return_parent_pages=True,
+                use_reranking=use_reranking,
+                llm_weight=llm_weight
+            )
+            logger.info(f"找到 {len(results)} 个相关文档")
+            return results
+        except Exception as e:
+            logger.error(f"搜索知识库时出错: {str(e)}")
+            return []
+
+    async def answer_question_async(self, question: str, fast_mode: bool = True, use_reranking: bool = True, llm_weight: float = 0.7) -> Dict[str, Any]:
         """异步回答问题，父页面检索默认开启"""
-        logger.info("=" * 60)
-        logger.info(f"🤔 开始处理用户问题: {question}")
-        logger.info(f"⚙️ 模式: {'快速模式' if fast_mode else '完整模式'}")
-        logger.info(f"📄 父页面检索: 启用")
+        logger.info(f"🔄 异步回答问题: {question}")
         try:
-            print_info(f"智能体开始处理问题: {question}")
-            logger.info("🔍 步骤1: 检索智能体开始工作...")
-            print_info("检索智能体正在检索相关信息...")
-            retrieval_results = self.search_similar(question, top_k=20)
-            if not retrieval_results:
-                logger.warning("⚠️ 未找到相关信息，返回默认答案")
-                return {
-                    "answer": "抱歉，我在知识库中没有找到相关信息来回答您的问题。",
-                    "sources": [],
-                    "status": "no_results"
-                }
-            logger.info(f"📋 构建检索上下文，共 {len(retrieval_results)} 条结果")
-            # 只显示文档名称，不显示页码
-            sources = list(set([hit["source"] for hit in retrieval_results]))
-            sources_text = "、".join(sources)
-            retrieval_context = "\n\n".join([hit['text'][:200] for hit in retrieval_results])
-            pages = [hit.get("page", 0) for hit in retrieval_results]
-            logger.info(f"📄 来源文档: {sources}")
-            logger.info(f"📄 涉及页面: {list(set(pages))}")
             if fast_mode:
-                logger.info("⚡ 使用快速模式，跳过分析和协调步骤")
-                print_info("使用快速模式，直接生成答案...")
-                try:
-                    logger.info("📝 构建快速模式提示词...")
-                    optimized_prompt = f"""基于以下检索到的信息，请直接回答用户问题。
+                # 快速模式：直接使用RAG系统
+                logger.info("⚡ 使用快速模式")
+                
+                # 搜索相关文档
+                similar_docs = self.search_knowledge_base(
+                    question, 
+                    top_k=20,
+                    use_reranking=use_reranking,
+                    llm_weight=llm_weight
+                )
+                
+                if not similar_docs:
+                    logger.warning("未找到相关文档")
+                    return {
+                        "answer": "抱歉，我在文档中没有找到与您问题相关的信息。",
+                        "context": "",
+                        "analysis": "",
+                        "framework": "AutoGen快速模式",
+                        "agents_involved": ["retrieval_agent"],
+                        "sources": []
+                    }
+                
+                # 构建上下文
+                context_parts = []
+                sources = []
+                
+                for i, doc in enumerate(similar_docs[:5]):  # 只使用前5个最相关的文档
+                    context_parts.append(f"文档片段 {i+1}:\n{doc['text']}")
+                    sources.append(doc.get('source', doc.get('document_name', '未知文档')))
+                
+                context = "\n\n".join(context_parts)
+                sources_text = "、".join(list(set(sources)))
+                
+                # 构建用户提示词
+                user_prompt = f"""基于以下文档内容，请回答用户的问题：
 
-要求：
-1. 使用markdown格式回答
-2. 段落之间用空行分隔
-3. 重要信息用**粗体**标记
-4. 列表使用- 或1. 格式
-5. 代码用`代码`格式
-6. 回答要准确、完整、有条理
-7. 用中文回答，语言要自然流畅
-8. 在回答末尾标注信息来源的文档名称
-
-检索到的信息：
-{retrieval_context}
+文档内容：
+{context}
 
 用户问题：{question}
 
-答案："""
-                    logger.info("🔄 快速模式：答案将在web层通过流式输出生成")
-                    final_result = "快速模式：答案将通过流式输出生成"
-                    analysis_result = f"基于检索到的{len(retrieval_results)}条相关信息，将使用流式输出生成答案。"
-                    logger.info("✅ 快速模式处理完成")
-                except Exception as e:
-                    logger.error(f"❌ 快速模式生成答案失败: {str(e)}")
-                    print_error(f"快速模式生成答案失败: {str(e)}")
-                    final_result = "抱歉，智能体系统暂时无法生成答案，请稍后重试。"
-                    analysis_result = "快速模式失败"
+请提供详细的分析过程和准确的答案。如果文档中没有相关信息，请明确说明。
+
+在回答末尾请标注信息来源的文档名称：{sources_text}"""
+
+                # 调用LLM生成答案
+                logger.info("正在生成答案...")
+                response = self.ollama_client.chat(
+                    model='deepseek-r1:14b',
+                    messages=[
+                        {"role": "system", "content": """你是一个专业的金融分析师助手，专门回答基于上传文档的金融相关问题。
+
+你的任务是根据提供的文档内容，准确回答用户的问题。请遵循以下原则：
+
+1. **严格基于文档内容**：只使用提供的文档内容来回答问题，不要使用外部知识
+2. **准确引用**：在回答中明确指出信息来源的文档名称
+3. **详细分析**：提供详细的分析过程，解释如何从文档中得出答案
+4. **诚实回答**：如果文档中没有相关信息，请明确说明"根据提供的文档，无法找到相关信息"
+5. **保持客观**：保持客观中立的分析态度，避免主观判断
+
+请确保你的回答准确、详细且基于文档内容。"""},
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                
+                answer = response['message']['content']
+                logger.info("✅ 快速模式回答完成")
+                
+                return {
+                    "answer": answer,
+                    "context": context,
+                    "analysis": "快速模式：直接基于检索结果生成答案",
+                    "framework": "AutoGen快速模式",
+                    "agents_involved": ["retrieval_agent", "answer_agent"],
+                    "sources": list(set(sources))
+                }
             else:
-                logger.info("🔄 使用完整模式，启动所有智能体协作")
-                logger.info("🧠 步骤2: 分析智能体开始工作...")
-                print_info("分析智能体正在分析检索结果...")
-                try:
-                    analysis_result = self.analysis_agent.process(
-                        message=f"请分析以下信息以回答用户问题: {question}",
-                        context=retrieval_context
-                    )
-                    logger.info(f"✅ 分析智能体工作完成，结果长度: {len(analysis_result)} 字符")
-                    print_info(f"分析结果: {analysis_result[:100]}...")
-                except Exception as e:
-                    logger.error(f"❌ 分析智能体失败: {str(e)}")
-                    print_error(f"分析智能体失败: {str(e)}")
-                    analysis_result = "分析失败，将直接基于检索结果生成答案"
-                logger.info("💬 步骤3: 回答智能体开始工作...")
-                print_info("回答智能体正在生成最终答案...")
-                try:
-                    answer_result = self.answer_agent.process(
-                        message=f"基于检索和分析结果，请回答用户问题: {question}",
-                        context=f"检索到的信息:\n{retrieval_context}\n\n分析结果:\n{analysis_result}"
-                    )
-                    logger.info(f"✅ 回答智能体工作完成，结果长度: {len(answer_result)} 字符")
-                    print_info(f"回答结果: {answer_result[:100]}...")
-                except Exception as e:
-                    logger.error(f"❌ 回答智能体失败: {str(e)}")
-                    print_error(f"回答智能体失败: {str(e)}")
-                    try:
-                        logger.info("🔄 尝试使用简单提示生成答案...")
-                        simple_prompt = f"""基于以下信息回答用户问题。
+                # 完整模式：使用多智能体协作
+                logger.info("🤖 使用完整模式 - 多智能体协作")
+                
+                # 创建用户代理
+                user_proxy = autogen.UserProxyAgent(
+                    name="user_proxy",
+                    human_input_mode="NEVER",
+                    max_consecutive_auto_reply=10,
+                    is_termination_msg=lambda x: x.get("content", "").rstrip().endswith("TERMINATE"),
+                    code_execution_config={"work_dir": "workspace"},
+                    llm_config=self.llm_config,
+                    system_message="用户代理，负责接收用户问题并协调其他智能体。"
+                )
+                
+                # 创建检索智能体
+                retrieval_agent = autogen.AssistantAgent(
+                    name="retrieval_agent",
+                    llm_config=self.llm_config,
+                    system_message=f"""你是检索智能体，负责从知识库中检索相关信息。
 
-要求：
-1. 使用markdown格式回答
-2. 段落之间用空行分隔
+当前知识库统计：
+- 文档数量：{self.get_stats().get('total_documents', 0)}
+- 向量数量：{self.get_stats().get('total_vectors', 0)}
+
+检索策略：
+1. 使用语义搜索找到最相关的文档片段
+2. 支持LLM重排序（权重：{llm_weight}）
+3. 返回最相关的5个文档片段作为上下文
+
+请根据用户问题，从知识库中检索相关信息。"""
+                )
+                
+                # 创建分析智能体
+                analysis_agent = autogen.AssistantAgent(
+                    name="analysis_agent",
+                    llm_config=self.llm_config,
+                    system_message="""你是分析智能体，负责分析检索到的信息。
+
+分析任务：
+1. 评估检索结果的相关性和可靠性
+2. 识别关键信息和数据点
+3. 分析信息之间的关联性
+4. 提供分析见解和建议
+
+请对检索到的信息进行深入分析。"""
+                )
+                
+                # 创建回答智能体
+                answer_agent = autogen.AssistantAgent(
+                    name="answer_agent",
+                    llm_config=self.llm_config,
+                    system_message="""你是回答智能体，负责生成最终答案。
+
+回答要求：
+1. 基于检索和分析结果生成准确答案
+2. 使用markdown格式，结构清晰
 3. 重要信息用**粗体**标记
-4. 列表使用- 或1. 格式
-5. 代码用`代码`格式
-6. 回答要准确、完整、有条理
-7. 用中文回答，语言要自然流畅
-8. 在回答末尾标注信息来源的文档名称
+4. 提供详细的分析过程
+5. 标注信息来源
+6. 用中文回答，语言自然流畅
 
-相关信息：
-{retrieval_context}
+请生成专业、准确的答案。"""
+                )
+                
+                # 创建协调者智能体
+                coordinator = autogen.AssistantAgent(
+                    name="coordinator",
+                    llm_config=self.llm_config,
+                    system_message="""你是协调者智能体，负责协调整个问答流程。
+
+协调任务：
+1. 接收用户问题
+2. 协调检索、分析、回答三个智能体
+3. 确保流程顺利进行
+4. 整合最终答案
+
+流程：
+1. 检索智能体：从知识库检索相关信息
+2. 分析智能体：分析检索结果
+3. 回答智能体：生成最终答案
+4. 协调者：整合并返回结果
+
+请协调整个问答流程。"""
+                )
+                
+                # 执行智能体协作
+                logger.info("🚀 开始智能体协作")
+                
+                # 首先进行检索
+                similar_docs = self.search_knowledge_base(
+                    question, 
+                    top_k=20,
+                    use_reranking=use_reranking,
+                    llm_weight=llm_weight
+                )
+                
+                if not similar_docs:
+                    logger.warning("未找到相关文档")
+                    return {
+                        "answer": "抱歉，我在文档中没有找到与您问题相关的信息。",
+                        "context": "",
+                        "analysis": "",
+                        "framework": "AutoGen完整模式",
+                        "agents_involved": ["retrieval_agent", "analysis_agent", "answer_agent", "coordinator"],
+                        "sources": []
+                    }
+                
+                # 构建上下文
+                context_parts = []
+                sources = []
+                
+                for i, doc in enumerate(similar_docs[:5]):
+                    context_parts.append(f"文档片段 {i+1}:\n{doc['text']}")
+                    sources.append(doc.get('source', doc.get('document_name', '未知文档')))
+                
+                context = "\n\n".join(context_parts)
+                sources_text = "、".join(list(set(sources)))
+                
+                # 构建协作提示词
+                collaboration_prompt = f"""用户问题：{question}
+
+检索到的相关信息（来源：{sources_text}）：
+{context}
+
+请按照以下流程协作回答：
+
+1. 检索智能体：评估检索结果的相关性和完整性
+2. 分析智能体：深入分析检索到的信息，识别关键点
+3. 回答智能体：基于分析结果生成最终答案
+4. 协调者：整合所有结果并返回最终答案
+
+最终答案要求：
+- 使用markdown格式
+- 结构清晰，逻辑严密
+- 重要信息用**粗体**标记
+- 提供详细的分析过程
+- 标注信息来源
+- 用中文回答，语言自然流畅
+
+请开始协作。"""
+                
+                # 启动协作
+                chat_result = await user_proxy.a_initiate_chat(
+                    coordinator,
+                    message=collaboration_prompt
+                )
+                
+                # 提取最终答案
+                final_answer = ""
+                analysis_content = ""
+                
+                for message in chat_result.chat_history:
+                    if message.get("name") == "answer_agent":
+                        final_answer = message.get("content", "")
+                    elif message.get("name") == "analysis_agent":
+                        analysis_content = message.get("content", "")
+                
+                # 如果没有找到答案，使用最后一个消息
+                if not final_answer and chat_result.chat_history:
+                    final_answer = chat_result.chat_history[-1].get("content", "")
+                
+                logger.info("✅ 完整模式协作完成")
+                
+                return {
+                    "answer": final_answer,
+                    "context": context,
+                    "analysis": analysis_content,
+                    "framework": "AutoGen完整模式",
+                    "agents_involved": ["retrieval_agent", "analysis_agent", "answer_agent", "coordinator"],
+                    "sources": list(set(sources))
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 异步回答问题失败: {str(e)}")
+            return {
+                "answer": f"回答失败: {str(e)}",
+                "context": "",
+                "analysis": "",
+                "framework": "AutoGen",
+                "agents_involved": [],
+                "sources": []
+            }
+
+    def answer_question(self, question: str, use_reranking: bool = True, llm_weight: float = 0.7) -> str:
+        """回答问题
+        
+        Args:
+            question: 用户问题
+            use_reranking: 是否使用LLM重排序
+            llm_weight: LLM重排序权重
+            
+        Returns:
+            答案文本
+        """
+        try:
+            logger.info(f"开始回答问题: {question}")
+            
+            # 搜索相关文档
+            similar_docs = self.search_knowledge_base(
+                question, 
+                top_k=20,
+                use_reranking=use_reranking,
+                llm_weight=llm_weight
+            )
+            
+            if not similar_docs:
+                logger.warning("未找到相关文档")
+                return "抱歉，我在文档中没有找到与您问题相关的信息。"
+            
+            # 构建上下文
+            context_parts = []
+            sources = []
+            
+            for i, doc in enumerate(similar_docs[:5]):  # 只使用前5个最相关的文档
+                context_parts.append(f"文档片段 {i+1}:\n{doc['text']}")
+                sources.append(doc.get('document_name', '未知文档'))
+            
+            context = "\n\n".join(context_parts)
+            sources_text = "、".join(list(set(sources)))
+            
+            # 构建用户提示词
+            user_prompt = f"""基于以下文档内容，请回答用户的问题：
+
+文档内容：
+{context}
 
 用户问题：{question}
 
-答案："""
-                        response = self.answer_agent.client.chat(
-                            model=OLLAMA_MODEL,
-                            messages=[{"role": "user", "content": simple_prompt}]
-                        )
-                        answer_result = response['message']['content']
-                        logger.info("✅ 简单提示生成答案成功")
-                    except Exception as e2:
-                        logger.error(f"❌ 简单回答也失败: {str(e2)}")
-                        print_error(f"简单回答也失败: {str(e2)}")
-                        answer_result = "抱歉，智能体系统暂时无法生成答案，请稍后重试。"
-                logger.info("🤝 步骤4: 协调智能体开始整合结果...")
-                print_info("协调智能体正在整合最终结果...")
-                try:
-                    final_result = self.coordinator.process(
-                        message=f"请整合以下结果并生成最终答案:\n\n问题: {question}\n\n检索结果: {retrieval_context}\n\n分析结果: {analysis_result}\n\n回答结果: {answer_result}",
-                        context=""
-                    )
-                    logger.info(f"✅ 协调智能体工作完成，最终结果长度: {len(final_result)} 字符")
-                    print_info(f"最终结果: {final_result[:100]}...")
-                except Exception as e:
-                    logger.error(f"❌ 协调智能体失败: {str(e)}")
-                    print_error(f"协调智能体失败: {str(e)}")
-                    final_result = answer_result
-            logger.info("🎉 智能体协作完成")
-            logger.info("=" * 60)
-            return {
-                "answer": final_result,
-                "sources": sources,
-                "pages": pages,
-                "context": retrieval_context,
-                "analysis": analysis_result,
-                "status": "success",
-                "mode": "fast" if fast_mode else "full",
-                "return_parent_pages": True
-            }
-        except Exception as e:
-            logger.error(f"❌ 智能体协作失败: {str(e)}")
-            print_error(f"智能体协作失败: {str(e)}")
-            return {
-                "answer": f"智能体协作过程中出现错误: {str(e)}",
-                "sources": [],
-                "pages": [],
-                "status": "error"
-            }
+请提供详细的分析过程和准确的答案。如果文档中没有相关信息，请明确说明。
 
-    def answer_question(self, question: str) -> str:
-        """同步回答问题，父页面检索默认开启"""
-        logger.info(f"🔄 同步回答问题: {question}")
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self.answer_question_async(question))
-            loop.close()
-            answer = result.get("answer", "无法生成答案")
-            logger.info(f"✅ 同步回答完成，答案长度: {len(answer)} 字符")
+在回答末尾请标注信息来源的文档名称：{sources_text}"""
+
+            # 调用LLM生成答案
+            logger.info("正在生成答案...")
+            response = self.ollama_client.chat(
+                model='deepseek-r1:14b',
+                messages=[
+                    {"role": "system", "content": """你是一个专业的金融分析师助手，专门回答基于上传文档的金融相关问题。
+
+你的任务是根据提供的文档内容，准确回答用户的问题。请遵循以下原则：
+
+1. **严格基于文档内容**：只使用提供的文档内容来回答问题，不要使用外部知识
+2. **准确引用**：在回答中明确指出信息来源的文档名称
+3. **详细分析**：提供详细的分析过程，解释如何从文档中得出答案
+4. **诚实回答**：如果文档中没有相关信息，请明确说明"根据提供的文档，无法找到相关信息"
+5. **保持客观**：保持客观中立的分析态度，避免主观判断
+
+请确保你的回答准确、详细且基于文档内容。"""},
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+            
+            answer = response['message']['content']
+            logger.info("答案生成完成")
+            
             return answer
+            
         except Exception as e:
-            logger.error(f"❌ 同步回答问题失败: {str(e)}")
-            print_error(f"回答问题失败: {str(e)}")
-            return f"回答失败: {str(e)}"
+            logger.error(f"回答问题时出错: {str(e)}")
+            return f"抱歉，处理您的问题时出现了错误: {str(e)}"
 
     def clear_knowledge_base(self):
         """清空知识库"""

@@ -11,13 +11,13 @@ from flask import Response
 import asyncio
 
 # 导入我们的RAG系统
-from core.rag_finance_qa import FinanceRAGSystem
-from utils.ui_utils import print_info, print_warning, print_error, print_success
-from utils.logger import logger
+from src.core.rag_finance_qa import FinanceRAGSystem
+from src.utils.ui_utils import print_info, print_warning, print_error, print_success
+from src.utils.logger import logger
 
 # 尝试导入AutoGen系统
 try:
-    from core.autogen_rag_system import AutoGenRAGSystem
+    from src.core.autogen_rag_system import AutoGenRAGSystem
     AUTOGEN_AVAILABLE = True
     logger.info("AutoGen智能体系统可用")
 except ImportError as e:
@@ -289,6 +289,8 @@ def ask_question_stream():
     
     data = request.get_json()
     question = data.get('question', '').strip()
+    use_reranking = data.get('use_reranking', True)  # 默认启用重排序
+    llm_weight = data.get('llm_weight', 0.7)  # 默认LLM权重0.7
     
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
@@ -299,7 +301,11 @@ def ask_question_stream():
             yield f"data: {json.dumps({'type': 'start', 'message': '开始检索相关信息...'})}\n\n"
             
             # 检索相关信息
-            context = rag_system.search_similar(question)
+            context = rag_system.search_similar(
+                question, 
+                use_reranking=use_reranking,
+                llm_weight=llm_weight
+            )
             context_text = "\n".join([hit["text"] for hit in context])
             
             # 构建思考过程
@@ -411,6 +417,8 @@ def ask_question_stream_autogen():
     data = request.get_json()
     question = data.get('question', '').strip()
     fast_mode = data.get('fast_mode', True)  # 默认使用快速模式
+    use_reranking = data.get('use_reranking', True)  # 默认启用重排序
+    llm_weight = data.get('llm_weight', 0.7)  # 默认LLM权重0.7
     
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
@@ -419,8 +427,7 @@ def ask_question_stream_autogen():
         try:
             # 发送开始标记
             mode_text = "快速模式" if fast_mode else "完整模式"
-            page_text = "（启用父页面检索）" if return_parent_pages else ""
-            yield f"data: {json.dumps({'type': 'start', 'message': f'智能体开始协作（{mode_text}）{page_text}...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'start', 'message': f'智能体开始协作（{mode_text}）...'})}\n\n"
             
             # 发送检索智能体状态
             yield f"data: {json.dumps({'type': 'agent_status', 'agent': '检索智能体', 'message': '正在检索相关信息...'})}\n\n"
@@ -428,7 +435,12 @@ def ask_question_stream_autogen():
             # 执行智能体协作
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(autogen_system.answer_question_async(question, fast_mode=fast_mode))
+            result = loop.run_until_complete(autogen_system.answer_question_async(
+                question, 
+                fast_mode=fast_mode,
+                use_reranking=use_reranking,
+                llm_weight=llm_weight
+            ))
             loop.close()
             
             # 构建思考过程
@@ -500,14 +512,26 @@ def ask_question_stream_autogen():
                         yield f"data: {json.dumps({'type': 'answer', 'content': content})}\n\n"
                 
                 # 发送完成标记
-                yield f"data: {json.dumps({'type': 'complete', 'answer': full_answer, 'think': think_content})}\n\n"
+                complete_data = {
+                    'type': 'complete', 
+                    'answer': full_answer, 
+                    'think': think_content,
+                    'sources': result.get('sources', [])
+                }
+                yield f"data: {json.dumps(complete_data)}\n\n"
             else:
                 # 完整模式：逐字符发送（因为答案已经生成完成）
                 for char in answer:
                     yield f"data: {json.dumps({'type': 'answer', 'content': char})}\n\n"
                 
                 # 发送完成标记
-                yield f"data: {json.dumps({'type': 'complete', 'answer': answer, 'think': think_content})}\n\n"
+                complete_data = {
+                    'type': 'complete', 
+                    'answer': answer, 
+                    'think': think_content,
+                    'sources': result.get('sources', [])
+                }
+                yield f"data: {json.dumps(complete_data)}\n\n"
             
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': f'智能体协作失败: {str(e)}'})}\n\n"
@@ -643,6 +667,43 @@ def safe_filename(original_filename: str) -> str:
     logger.info(f"文件名处理: {original_filename} -> {safe_filename}")
     
     return safe_filename
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """聊天API端点"""
+    try:
+        data = request.get_json()
+        question = data.get('question', '').strip()
+        use_reranking = data.get('use_reranking', True)  # 默认启用重排序
+        llm_weight = data.get('llm_weight', 0.7)  # 默认LLM权重0.7
+        
+        if not question:
+            return jsonify({'error': '问题不能为空'}), 400
+        
+        logger.info(f"收到聊天请求: {question[:50]}...")
+        logger.info(f"重排序设置: use_reranking={use_reranking}, llm_weight={llm_weight}")
+        
+        # 使用全局AutoGen RAG系统回答问题
+        if autogen_system is None:
+            return jsonify({'error': 'AutoGen系统未初始化'}), 500
+            
+        answer = autogen_system.answer_question(
+            question, 
+            use_reranking=use_reranking,
+            llm_weight=llm_weight
+        )
+        
+        logger.info(f"生成答案完成，长度: {len(answer)} 字符")
+        
+        return jsonify({
+            'answer': answer,
+            'question': question,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"聊天API出错: {str(e)}")
+        return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
 
 # 初始化系统
 initialize_systems()

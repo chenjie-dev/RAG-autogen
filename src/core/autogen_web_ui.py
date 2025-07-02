@@ -26,8 +26,8 @@ import asyncio
 from typing import Dict, Any, List
 
 # 导入AutoGen智能体系统
-from core.autogen_rag_system import AutoGenRAGSystem
-from utils.ui_utils import print_info, print_warning, print_error, print_success
+from src.core.autogen_rag_system import AutoGenRAGSystem
+from src.utils.ui_utils import print_info, print_warning, print_error, print_success
 
 # 获取项目根目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

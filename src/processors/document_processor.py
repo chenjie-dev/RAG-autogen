@@ -17,7 +17,7 @@ from docling.datamodel.base_models import ConversionStatus
 from docling.datamodel.document import ConversionResult, InputDocument
 
 # 导入日志模块
-from utils.logger import logger
+from src.utils.logger import logger
 
 class DocumentProcessor:
     """文档处理器，支持多种文件格式，使用DocLing处理PDF"""
