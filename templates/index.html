@@ -198,7 +198,13 @@
             background: #f8f9fa;
             border-radius: 10px;
             padding: 15px;
-            border: 2px solid #e9ecef;
+        }
+        
+        /* 查询重写控制样式 */
+        .query-rewrite-controls {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
         }
         .reranking-controls h6 {
             color: #495057;
@@ -719,6 +725,37 @@
                                 </div>
                             </div>
                             
+                            <!-- 查询重写控制面板 -->
+                            <div class="query-rewrite-controls mb-3">
+                                <h6><i class="fas fa-edit"></i> 查询重写设置</h6>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="useQueryRewrite" checked>
+                                            <label class="form-check-label" for="useQueryRewrite">
+                                                启用查询重写（优化问题输入）
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <button class="btn btn-outline-primary btn-sm" onclick="getQuerySuggestions()">
+                                            <i class="fas fa-lightbulb"></i> 获取查询建议
+                                        </button>
+                                    </div>
+                                </div>
+                                <!-- 查询建议显示区域 -->
+                                <div id="querySuggestions" class="mt-2" style="display: none;">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0"><i class="fas fa-lightbulb"></i> 查询建议</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div id="suggestionsContent"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="chat-container" id="chatContainer">
                                 <div class="message bot-message">
                                     <i class="fas fa-robot"></i> 欢迎使用金融知识RAG问答系统！请选择系统模式并开始提问。
@@ -918,6 +955,9 @@
             const useReranking = document.getElementById('useReranking').checked;
             const llmWeight = parseFloat(document.getElementById('llmWeightSlider').value);
             
+            // 获取查询重写设置
+            const useQueryRewrite = document.getElementById('useQueryRewrite').checked;
+            
             const apiEndpoint = currentSystem === 'traditional' ? '/ask_stream' : '/ask_stream_autogen';
             try {
                 if (currentSystem === 'autogen') {
@@ -925,17 +965,105 @@
                     await streamQuestion(question, apiEndpoint, { 
                         fast_mode: fastMode,
                         use_reranking: useReranking,
-                        llm_weight: llmWeight
+                        llm_weight: llmWeight,
+                        use_query_rewrite: useQueryRewrite
                     });
                 } else {
                     await streamQuestion(question, apiEndpoint, {
                         use_reranking: useReranking,
-                        llm_weight: llmWeight
+                        llm_weight: llmWeight,
+                        use_query_rewrite: useQueryRewrite
                     });
                 }
             } catch (error) {
                 addMessage('系统', '回答失败: ' + error.message, 'bot');
             }
+        }
+
+        // 获取查询建议
+        async function getQuerySuggestions() {
+            const input = document.getElementById('questionInput');
+            const query = input.value.trim();
+            
+            if (!query) {
+                alert('请先输入查询内容');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/query_suggestions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        query: query,
+                        system: currentSystem
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    displayQuerySuggestions(result);
+                } else {
+                    alert('获取查询建议失败: ' + (result.error || '未知错误'));
+                }
+            } catch (error) {
+                console.error('获取查询建议失败:', error);
+                alert('获取查询建议失败: ' + error.message);
+            }
+        }
+
+        // 显示查询建议
+        function displayQuerySuggestions(result) {
+            const suggestionsDiv = document.getElementById('querySuggestions');
+            const contentDiv = document.getElementById('suggestionsContent');
+            
+            let html = '';
+            
+            // 显示意图分析
+            if (result.intent_analysis) {
+                html += `
+                    <div class="mb-3">
+                        <h6><i class="fas fa-search"></i> 查询意图分析</h6>
+                        <p><strong>类型:</strong> ${result.intent_analysis.type}</p>
+                        <p><strong>置信度:</strong> ${(result.intent_analysis.confidence * 100).toFixed(1)}%</p>
+                        <p><strong>关键词:</strong> ${result.intent_analysis.keywords.join(', ')}</p>
+                    </div>
+                `;
+            }
+            
+            // 显示查询建议
+            if (result.suggestions && result.suggestions.length > 0) {
+                html += `
+                    <div class="mb-3">
+                        <h6><i class="fas fa-lightbulb"></i> 查询建议</h6>
+                        <ul class="list-group">
+                `;
+                result.suggestions.forEach(suggestion => {
+                    html += `<li class="list-group-item">${suggestion}</li>`;
+                });
+                html += '</ul></div>';
+            }
+            
+            // 显示重写结果
+            if (result.rewrite_result && result.rewrite_result.success) {
+                html += `
+                    <div class="mb-3">
+                        <h6><i class="fas fa-edit"></i> 查询重写结果</h6>
+                        <p><strong>原始查询:</strong> ${result.rewrite_result.original_query}</p>
+                        <p><strong>重写版本:</strong></p>
+                        <ul class="list-group">
+                `;
+                result.rewrite_result.rewritten_queries.forEach((query, index) => {
+                    html += `<li class="list-group-item">${index + 1}. ${query}</li>`;
+                });
+                html += '</ul></div>';
+            }
+            
+            contentDiv.innerHTML = html;
+            suggestionsDiv.style.display = 'block';
         }
 
         // 流式提问

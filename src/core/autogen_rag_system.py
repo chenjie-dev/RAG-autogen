@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 from src.processors.document_processor import DocumentProcessor
 from src.utils.text_utils import TextUtils
 from src.utils.vector_store import VectorStore
+from src.utils.query_rewriter import QueryRewriter
 from src.utils.ui_utils import print_info, print_warning, print_success, print_error
 from src.utils.logger import logger
 
@@ -204,6 +205,7 @@ class AutoGenRAGSystem:
         self.vector_store = VectorStore()
         self.text_utils = TextUtils()
         self.doc_processor = DocumentProcessor()
+        self.query_rewriter = QueryRewriter()
         logger.info("✅ 基础组件初始化完成")
         
         # 创建智能体
@@ -324,7 +326,7 @@ class AutoGenRAGSystem:
             print_error(f"搜索失败: {str(e)}")
             return []
 
-    def search_knowledge_base(self, query: str, top_k: int = 20, use_reranking: bool = True, llm_weight: float = 0.7) -> List[Dict]:
+    def search_knowledge_base(self, query: str, top_k: int = 20, use_reranking: bool = True, llm_weight: float = 0.7, use_query_rewrite: bool = True) -> List[Dict]:
         """搜索知识库
         
         Args:
@@ -332,12 +334,48 @@ class AutoGenRAGSystem:
             top_k: 返回结果数量
             use_reranking: 是否使用LLM重排序
             llm_weight: LLM重排序权重
+            use_query_rewrite: 是否使用查询重写
             
         Returns:
             搜索结果列表
         """
         try:
             logger.info(f"搜索知识库: {query[:50]}...")
+            
+            # 如果启用查询重写，先重写查询
+            if use_query_rewrite:
+                logger.info("启用查询重写功能...")
+                rewrite_result = self.query_rewriter.rewrite_query(query, strategy="auto")
+                
+                if rewrite_result["success"] and len(rewrite_result["rewritten_queries"]) > 1:
+                    # 使用重写后的查询进行搜索
+                    rewritten_queries = rewrite_result["rewritten_queries"]
+                    logger.info(f"查询重写完成，生成 {len(rewritten_queries)} 个版本")
+                    
+                    # 使用第一个重写版本进行搜索
+                    rewritten_query = rewritten_queries[0]
+                    logger.info(f"使用重写查询: {rewritten_query}")
+                    
+                    results = self.vector_store.search_similar(
+                        rewritten_query, 
+                        top_k=top_k, 
+                        return_parent_pages=True,
+                        use_reranking=use_reranking,
+                        llm_weight=llm_weight
+                    )
+                    
+                    # 添加查询重写信息到结果中
+                    for result in results:
+                        result["original_query"] = query
+                        result["rewritten_query"] = rewritten_query
+                        result["query_rewrite_success"] = True
+                    
+                    logger.info(f"找到 {len(results)} 个相关文档")
+                    return results
+                else:
+                    logger.warning("查询重写失败，使用原始查询")
+            
+            # 使用原始查询进行搜索
             results = self.vector_store.search_similar(
                 query, 
                 top_k=top_k, 
@@ -345,14 +383,22 @@ class AutoGenRAGSystem:
                 use_reranking=use_reranking,
                 llm_weight=llm_weight
             )
+            
+            # 添加查询重写信息
+            for result in results:
+                result["original_query"] = query
+                result["rewritten_query"] = query
+                result["query_rewrite_success"] = False
+            
             logger.info(f"找到 {len(results)} 个相关文档")
             return results
+            
         except Exception as e:
             logger.error(f"搜索知识库时出错: {str(e)}")
             return []
 
-    async def answer_question_async(self, question: str, fast_mode: bool = True, use_reranking: bool = True, llm_weight: float = 0.7) -> Dict[str, Any]:
-        """异步回答问题，父页面检索默认开启"""
+    async def answer_question_async(self, question: str, fast_mode: bool = True, use_reranking: bool = True, llm_weight: float = 0.7, use_query_rewrite: bool = True) -> Dict[str, Any]:
+        """异步回答问题，父页面检索默认开启，支持查询重写"""
         logger.info(f"🔄 异步回答问题: {question}")
         try:
             if fast_mode:
@@ -364,7 +410,8 @@ class AutoGenRAGSystem:
                     question, 
                     top_k=20,
                     use_reranking=use_reranking,
-                    llm_weight=llm_weight
+                    llm_weight=llm_weight,
+                    use_query_rewrite=use_query_rewrite
                 )
                 
                 if not similar_docs:
@@ -616,13 +663,14 @@ class AutoGenRAGSystem:
                 "sources": []
             }
 
-    def answer_question(self, question: str, use_reranking: bool = True, llm_weight: float = 0.7) -> str:
+    def answer_question(self, question: str, use_reranking: bool = True, llm_weight: float = 0.7, use_query_rewrite: bool = True) -> str:
         """回答问题
         
         Args:
             question: 用户问题
             use_reranking: 是否使用LLM重排序
             llm_weight: LLM重排序权重
+            use_query_rewrite: 是否使用查询重写
             
         Returns:
             答案文本
@@ -635,7 +683,8 @@ class AutoGenRAGSystem:
                 question, 
                 top_k=20,
                 use_reranking=use_reranking,
-                llm_weight=llm_weight
+                llm_weight=llm_weight,
+                use_query_rewrite=use_query_rewrite
             )
             
             if not similar_docs:
@@ -741,6 +790,46 @@ class AutoGenRAGSystem:
                 "error": str(e),
                 "agents": [],
                 "total_agents": 0
+            }
+
+    def get_query_suggestions(self, query: str) -> Dict[str, Any]:
+        """获取查询建议和重写选项
+        
+        Args:
+            query: 原始查询
+            
+        Returns:
+            包含查询建议和重写选项的字典
+        """
+        try:
+            logger.info(f"获取查询建议: {query[:50]}...")
+            
+            # 分析查询意图
+            intent_analysis = self.query_rewriter.analyze_query_intent(query)
+            
+            # 获取查询建议
+            suggestions = self.query_rewriter.get_query_suggestions(query)
+            
+            # 尝试重写查询
+            rewrite_result = self.query_rewriter.rewrite_query(query, strategy="auto")
+            
+            return {
+                "original_query": query,
+                "intent_analysis": intent_analysis,
+                "suggestions": suggestions,
+                "rewrite_result": rewrite_result,
+                "success": True
+            }
+            
+        except Exception as e:
+            logger.error(f"获取查询建议时出错: {str(e)}")
+            return {
+                "original_query": query,
+                "intent_analysis": {"type": "general", "confidence": 0.5, "keywords": [], "suggestions": []},
+                "suggestions": [],
+                "rewrite_result": {"success": False, "error": str(e)},
+                "success": False,
+                "error": str(e)
             }
 
 def main():

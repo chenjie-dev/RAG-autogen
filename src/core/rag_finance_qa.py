@@ -10,6 +10,7 @@ from datetime import datetime
 from src.processors.document_processor import DocumentProcessor
 from src.utils.text_utils import TextUtils
 from src.utils.vector_store import VectorStore
+from src.utils.query_rewriter import QueryRewriter
 from src.utils.ui_utils import print_section, typewriter_print, print_info, print_warning, print_success, print_error
 from src.utils.logger import logger
 
@@ -30,6 +31,7 @@ class FinanceRAGSystem:
         self.vector_store = VectorStore()
         self.text_utils = TextUtils()
         self.doc_processor = DocumentProcessor()
+        self.query_rewriter = QueryRewriter()
         
         # 初始化Ollama客户端，支持重试
         max_retries = 5
@@ -229,23 +231,58 @@ class FinanceRAGSystem:
         self.vector_store.insert_data(texts, embedding_list, sources, timestamps)
         print_success(f"成功添加 {len(new_texts)} 条新知识到数据库")
 
-    def search_similar(self, query_text: str, top_k: int = 20, use_reranking: bool = True, llm_weight: float = 0.7) -> List[Dict]:
-        """搜索相似文本，父页面检索默认开启"""
+    def search_similar(self, query_text: str, top_k: int = 20, use_reranking: bool = True, llm_weight: float = 0.7, use_query_rewrite: bool = True) -> List[Dict]:
+        """搜索相似文本，父页面检索默认开启，支持查询重写"""
         try:
-            # 直接使用vector_store的search_similar方法，它会处理重排序
+            # 如果启用查询重写，先重写查询
+            if use_query_rewrite:
+                logger.info("启用查询重写功能...")
+                rewrite_result = self.query_rewriter.rewrite_query(query_text, strategy="auto")
+                
+                if rewrite_result["success"] and len(rewrite_result["rewritten_queries"]) > 1:
+                    # 使用重写后的查询进行搜索
+                    rewritten_queries = rewrite_result["rewritten_queries"]
+                    logger.info(f"查询重写完成，生成 {len(rewritten_queries)} 个版本")
+                    
+                    # 使用第一个重写版本进行搜索
+                    rewritten_query = rewritten_queries[0]
+                    logger.info(f"使用重写查询: {rewritten_query}")
+                    
+                    # 使用重写后的查询进行搜索
+                    results = self.vector_store.search_similar(rewritten_query, top_k, return_parent_pages=True, use_reranking=use_reranking, llm_weight=llm_weight)
+                    
+                    # 添加查询重写信息到结果中
+                    for result in results:
+                        result["original_query"] = query_text
+                        result["rewritten_query"] = rewritten_query
+                        result["query_rewrite_success"] = True
+                    
+                    return results
+                else:
+                    logger.warning("查询重写失败，使用原始查询")
+            
+            # 使用原始查询进行搜索
             results = self.vector_store.search_similar(query_text, top_k, return_parent_pages=True, use_reranking=use_reranking, llm_weight=llm_weight)
+            
+            # 添加查询重写信息
+            for result in results:
+                result["original_query"] = query_text
+                result["rewritten_query"] = query_text
+                result["query_rewrite_success"] = False
+            
             return results
+            
         except Exception as e:
             print_error(f"搜索相似文本时出错: {str(e)}")
             return []
 
-    def answer_question(self, question: str, use_reranking: bool = True, llm_weight: float = 0.7) -> Dict[str, Any]:
-        """回答问题，父页面检索默认开启"""
+    def answer_question(self, question: str, use_reranking: bool = True, llm_weight: float = 0.7, use_query_rewrite: bool = True) -> Dict[str, Any]:
+        """回答问题，父页面检索默认开启，支持查询重写"""
         try:
             logger.info(f"开始处理问题: {question}")
             
             # 搜索相关文档
-            similar_docs = self.search_similar(question, use_reranking=use_reranking, llm_weight=llm_weight)
+            similar_docs = self.search_similar(question, use_reranking=use_reranking, llm_weight=llm_weight, use_query_rewrite=use_query_rewrite)
             
             if not similar_docs:
                 logger.warning("未找到相关文档")
@@ -322,6 +359,47 @@ class FinanceRAGSystem:
         except Exception as e:
             print_error(f"清空知识库时出错: {str(e)}")
             return False
+
+    def get_query_suggestions(self, query: str) -> Dict[str, Any]:
+        """获取查询建议和重写选项
+        
+        Args:
+            query: 原始查询
+            
+        Returns:
+            包含查询建议和重写选项的字典
+        """
+        try:
+            logger.info(f"获取查询建议: {query[:50]}...")
+            
+            # 分析查询意图
+            intent_analysis = self.query_rewriter.analyze_query_intent(query)
+            
+            # 获取查询建议
+            suggestions = self.query_rewriter.get_query_suggestions(query)
+            
+            # 尝试重写查询
+            rewrite_result = self.query_rewriter.rewrite_query(query, strategy="auto")
+            
+            return {
+                "original_query": query,
+                "intent_analysis": intent_analysis,
+                "suggestions": suggestions,
+                "rewrite_result": rewrite_result,
+                "success": True
+            }
+            
+        except Exception as e:
+            logger.error(f"获取查询建议时出错: {str(e)}")
+            return {
+                "original_query": query,
+                "intent_rewrite_success": False,
+                "intent_analysis": {"type": "general", "confidence": 0.5, "keywords": [], "suggestions": []},
+                "suggestions": [],
+                "rewrite_result": {"success": False, "error": str(e)},
+                "success": False,
+                "error": str(e)
+            }
 
 def main():
     """主函数"""

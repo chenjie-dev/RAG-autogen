@@ -195,10 +195,11 @@ def ask_question():
         return jsonify({'error': 'RAG系统未初始化'}), 500
     data = request.get_json()
     question = data.get('question', '').strip()
+    use_query_rewrite = data.get('use_query_rewrite', True)  # 默认启用查询重写
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
     try:
-        context = rag_system.search_similar(question)
+        context = rag_system.search_similar(question, use_query_rewrite=use_query_rewrite)
         context_text = "\n".join([hit["text"] for hit in context])
         if context:
             # 只显示文档名称，不显示页码
@@ -291,6 +292,7 @@ def ask_question_stream():
     question = data.get('question', '').strip()
     use_reranking = data.get('use_reranking', True)  # 默认启用重排序
     llm_weight = data.get('llm_weight', 0.7)  # 默认LLM权重0.7
+    use_query_rewrite = data.get('use_query_rewrite', True)  # 默认启用查询重写
     
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
@@ -304,7 +306,8 @@ def ask_question_stream():
             context = rag_system.search_similar(
                 question, 
                 use_reranking=use_reranking,
-                llm_weight=llm_weight
+                llm_weight=llm_weight,
+                use_query_rewrite=use_query_rewrite
             )
             context_text = "\n".join([hit["text"] for hit in context])
             
@@ -419,6 +422,7 @@ def ask_question_stream_autogen():
     fast_mode = data.get('fast_mode', True)  # 默认使用快速模式
     use_reranking = data.get('use_reranking', True)  # 默认启用重排序
     llm_weight = data.get('llm_weight', 0.7)  # 默认LLM权重0.7
+    use_query_rewrite = data.get('use_query_rewrite', True)  # 默认启用查询重写
     
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
@@ -439,7 +443,8 @@ def ask_question_stream_autogen():
                 question, 
                 fast_mode=fast_mode,
                 use_reranking=use_reranking,
-                llm_weight=llm_weight
+                llm_weight=llm_weight,
+                use_query_rewrite=use_query_rewrite
             ))
             loop.close()
             
@@ -703,6 +708,37 @@ def chat():
         
     except Exception as e:
         logger.error(f"聊天API出错: {str(e)}")
+        return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
+
+@app.route('/api/query_suggestions', methods=['POST'])
+def get_query_suggestions():
+    """获取查询建议API端点"""
+    try:
+        data = request.get_json()
+        query = data.get('query', '').strip()
+        system = data.get('system', 'traditional')  # 默认使用传统RAG系统
+        
+        if not query:
+            return jsonify({'error': '查询不能为空'}), 400
+        
+        logger.info(f"收到查询建议请求: {query[:50]}...，系统: {system}")
+        
+        # 根据系统类型选择相应的系统获取查询建议
+        if system == 'autogen':
+            if autogen_system is None:
+                return jsonify({'error': 'AutoGen系统未初始化'}), 500
+            suggestions = autogen_system.get_query_suggestions(query)
+        else:
+            if rag_system is None:
+                return jsonify({'error': 'RAG系统未初始化'}), 500
+            suggestions = rag_system.get_query_suggestions(query)
+        
+        logger.info(f"查询建议生成完成")
+        
+        return jsonify(suggestions)
+        
+    except Exception as e:
+        logger.error(f"查询建议API出错: {str(e)}")
         return jsonify({'error': f'处理请求时出错: {str(e)}'}), 500
 
 # 初始化系统
