@@ -23,8 +23,8 @@ if OLLAMA_HOST and OLLAMA_HOST != "http://106.52.6.69:11434":
     OLLAMA_BASE_URL = OLLAMA_HOST
 
 # 向量数据库配置
-EMBEDDING_DIM = 384  # all-MiniLM-L6-v2的嵌入维度
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_DIM = 1024  # BAAI/bge-large-zh-v1.5的嵌入维度
+EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5"
 
 # Web UI配置
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")

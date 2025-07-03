@@ -7,6 +7,8 @@ pymilvus>=2.3.0                 # Milvus向量数据库Python客户端
 
 # AI和机器学习:
 sentence-transformers>=2.2.0    # 文本嵌入模型，用于生成文档向量
+torch>=2.0.0                    # PyTorch深度学习框架
+transformers>=4.30.0            # Hugging Face Transformers库
 ollama>=0.1.0                   # Ollama API客户端，用于大语言模型调用
 
 # 智能体框架:

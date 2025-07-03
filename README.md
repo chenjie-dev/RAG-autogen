@@ -13,6 +13,7 @@
 - **Web界面**: 现代化的用户界面，支持流式回答
 - **打字机效果**: 优化的聊天体验，实时显示思考过程
 - **LLM重排序**: 支持基于大模型的检索结果重排序，提升答案相关性和准确性
+- **中文优化嵌入**: 使用BAAI/bge-large-zh-v1.5模型，专为中文文本优化，支持跨语言检索
 
 ### AutoGen智能体系统
 - **多智能体协作**: 检索、分析、回答、协调智能体
@@ -25,6 +26,7 @@
 - **前端**: HTML5, CSS3, JavaScript, Bootstrap 5
 - **AI模型**: DeepSeek R1 14B (通过Ollama)
 - **向量数据库**: Milvus
+- **嵌入模型**: BAAI/bge-large-zh-v1.5 (1024维中文优化模型)
 - **文档处理**: DocLing (PDF/Word), python-docx, markdown 
 
 ## 📁 项目结构
@@ -76,6 +78,7 @@ RAG-autogen/
 - Docker & Docker Compose
 - Milvus 2.3+
 - Ollama (支持DeepSeek R1 14B模型)
+- 至少8GB可用内存 (用于BAAI/bge-large-zh-v1.5模型)
 
 ### 1. 克隆项目
 ```bash
@@ -88,8 +91,11 @@ cd RAG-autogen
 pip install -r requirements.txt
 ```
 
-### 3. 测试文档处理功能（可选）
+### 3. 测试系统功能（可选）
 ```bash
+# 测试嵌入模型
+python test_bge_embedding.py
+
 # 测试PDF处理功能
 python tests/test_backend_pdfium.py
 
@@ -182,6 +188,10 @@ MILVUS_HOST = "localhost"
 MILVUS_PORT = 19530
 MILVUS_COLLECTION_NAME = "rag_documents"
 
+# 嵌入模型配置
+EMBEDDING_DIM = 1024  # BAAI/bge-large-zh-v1.5的嵌入维度
+EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5"
+
 # 系统配置
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 SUPPORTED_FORMATS = ['.pdf', '.docx', '.md', '.pptx', '.txt']
@@ -235,6 +245,9 @@ kubectl apply -f k8s/rag-web-deployment.yaml
 
 ### 连接测试
 ```bash
+# 测试嵌入模型
+python test_bge_embedding.py
+
 # 测试Ollama连接
 python test_ollama_connection.py
 ```
@@ -277,8 +290,11 @@ python tests/test_word_processing.py
 
 3. **模型下载失败**
    ```bash
-   # 手动下载模型
+   # 手动下载Ollama模型
    ollama pull deepseek-r1:14b
+   
+   # 手动下载嵌入模型
+   python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-large-zh-v1.5')"
    ```
 
 4. **文档处理失败**
@@ -294,6 +310,7 @@ python tests/test_word_processing.py
    - 减少并发请求数
    - 使用更小的模型
    - 增加系统内存
+   - 检查BAAI/bge-large-zh-v1.5模型内存占用（约2-3GB）
 
 ### 日志查看
 ```bash
@@ -312,6 +329,7 @@ docker logs rag-autogen-container
 3. **打字机效果**: 提升用户体验
 4. **智能体状态监控**: 可视化处理过程
 5. **DocLing文档处理**: 高效的文档解析和文本提取
+6. **中文优化嵌入**: BAAI/bge-large-zh-v1.5模型，专为中文文本优化，支持跨语言检索
 
 ### 进一步优化建议
 1. **缓存机制**: 缓存常见问题答案
@@ -337,6 +355,7 @@ docker logs rag-autogen-container
 - [Ollama](https://ollama.ai/) - 本地LLM服务
 - [AutoGen](https://microsoft.github.io/autogen/) - 智能体框架
 - [DocLing](https://github.com/DS4SD/docling) - 文档处理框架
+- [BAAI/bge-large-zh-v1.5](https://huggingface.co/BAAI/bge-large-zh-v1.5) - 中文嵌入模型
 - [Flask](https://flask.palletsprojects.com/) - Web框架
 - [Bootstrap](https://getbootstrap.com/) - UI框架
 
@@ -353,3 +372,4 @@ docker logs rag-autogen-container
 - ✅ 新增Word处理：集成DocLing MsWord后端，支持完整文档结构解析
 - ✅ 改进错误处理：完善的备用方案和异常处理机制
 - ✅ 新增测试套件：PDF和Word文档处理功能测试
+- ✅ 升级嵌入模型：使用BAAI/bge-large-zh-v1.5，专为中文优化，支持跨语言检索

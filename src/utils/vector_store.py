@@ -26,7 +26,7 @@ class VectorStore:
         
         # 初始化文本嵌入模型
         logger.info("正在初始化文本嵌入模型...")
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.embedding_model = SentenceTransformer('BAAI/bge-large-zh-v1.5')
         logger.info("文本嵌入模型初始化完成")
         
         # 初始化LLM重排序器（可选，失败时不影响基本功能）
@@ -105,7 +105,7 @@ class VectorStore:
         fields = [
             FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=384),
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=1024),
             FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=256),
             FieldSchema(name="timestamp", dtype=DataType.VARCHAR, max_length=32),
             FieldSchema(name="page", dtype=DataType.INT64)  # 添加页面字段

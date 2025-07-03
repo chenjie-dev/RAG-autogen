@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 class TextUtils:
     """文本处理工具类"""
     
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
+    def __init__(self, model_name: str = 'BAAI/bge-large-zh-v1.5'):
         """初始化文本处理工具
         
         Args:
